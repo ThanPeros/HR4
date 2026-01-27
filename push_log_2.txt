@@ -1,0 +1,26 @@
+﻿branch 'main' set up to track 'origin/main'.
+git : Pushing to https://git
+hub.com/ThanPeros/thanperos_
+hr4.git
+At line:1 char:1
++ git push -v -u origin 
+main 2>&1 | Out-File 
+-Encoding utf8 push_log_2. 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~
+    + CategoryInfo          
+    : NotSpecified: (Pushi  
+  ng to http...anperos_hr   
+ 4.git:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+To https://github.com/ThanPe
+ros/thanperos_hr4.git
+ = [up to date]      main 
+-> main
+updating local tracking ref 
+'refs/remotes/origin/main'
+Everything up-to-date
