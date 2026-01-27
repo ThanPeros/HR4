@@ -1,0 +1,130 @@
+2025-10-19 08:10:56 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-19 08:11:16 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-19 08:29:08 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-19 09:29:26 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (upgraded plain text to hashed)
+2025-10-19 09:30:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-19 09:30:38 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-19 09:31:20 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Login successful (upgraded plain text to hashed)
+2025-10-20 17:36:45 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-20 17:55:38 - IP: ::1 - Username: dasdsad - Status: FAILED - Details: Invalid credentials or inactive account
+2025-10-20 17:57:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 09:07:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 09:08:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 09:08:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login completed
+2025-10-22 09:22:09 - IP: ::1 - Username: hr_manager - Status: EMAIL_FAILED - Details: Failed to send OTP to perosjonathan529@gmail.com
+2025-10-22 09:22:09 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP send failed
+2025-10-22 09:39:01 - IP: ::1 - Username: hr_manager - Status: EMAIL_FAILED - Details: Error: SMTP Error: Could not authenticate.
+2025-10-22 09:39:01 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP send failed
+2025-10-22 09:39:54 - IP: ::1 - Username: hr_manager - Status: EMAIL_FAILED - Details: Error: SMTP Error: Could not authenticate.
+2025-10-22 09:39:54 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP send failed
+2025-10-22 09:40:33 - IP: ::1 - Username: hr_manager - Status: EMAIL_FAILED - Details: Error: SMTP Error: Could not authenticate.
+2025-10-22 09:40:33 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP send failed
+2025-10-22 09:48:21 - IP: ::1 - Username: hr_manager - Status: OTP_SENT - Details: OTP sent via SMS
+2025-10-22 09:56:30 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Empty credentials
+2025-10-22 09:57:07 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Empty credentials
+2025-10-22 10:21:38 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Empty credentials
+2025-10-22 10:22:09 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-22 10:43:16 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-22 10:45:03 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 10:45:05 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP email sending failed
+2025-10-22 10:53:34 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 11:03:41 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 11:42:45 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 13:46:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 13:46:23 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP email sending failed
+2025-10-22 13:53:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 13:53:58 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:11:51 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:11:53 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: OTP email sending failed
+2025-10-22 14:27:06 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:42:40 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:48:06 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:51:20 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:54:28 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 14:56:48 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2025-10-22 14:56:56 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 15:03:38 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-22 15:12:25 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 13:59:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 14:02:32 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 14:03:27 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 14:04:36 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 14:05:49 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 14:09:19 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-24 16:29:37 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-10-29 11:08:31 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 11:35:38 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 11:36:47 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 11:49:20 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Database connection error
+2025-11-05 11:49:28 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 12:07:40 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Database connection error
+2025-11-05 13:17:53 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Database connection error
+2025-11-05 13:18:04 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 13:28:02 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 13:28:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 13:35:22 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-05 14:22:50 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-10 16:57:35 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-10 18:29:42 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-10 19:45:19 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-16 17:21:22 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-19 14:16:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-19 14:26:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-19 15:08:23 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-19 15:09:36 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-19 16:52:18 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-20 10:07:30 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-21 11:02:49 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-23 14:07:25 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 09:47:26 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 09:57:04 - IP: ::1 - Username: eldrian_manager - Status: FAILED - Details: Invalid credentials
+2025-11-24 09:57:42 - IP: ::1 - Username: eldrian_manager - Status: SUCCESS - Details: Login successful (upgraded plain text to hashed)
+2025-11-24 09:58:48 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 10:00:11 - IP: ::1 - Username: dave_manager - Status: SUCCESS - Details: Login successful (upgraded plain text to hashed)
+2025-11-24 10:01:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 13:22:17 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 13:24:55 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 13:30:25 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-24 13:31:09 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-11-28 02:06:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-12-16 07:32:39 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2025-12-16 07:33:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-02 08:55:28 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-02 10:45:27 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-02 11:45:44 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-08 08:40:26 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-08 10:25:26 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-08 11:56:14 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-13 07:58:08 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-15 12:17:47 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 04:56:12 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:29:25 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:36:40 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:42:32 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:43:14 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:50:08 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-16 06:59:30 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-17 11:13:35 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-17 11:15:40 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-18 07:36:07 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-18 08:08:04 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-20 07:16:55 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-20 17:00:19 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-21 14:46:15 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-21 17:06:35 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-22 06:36:05 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-22 06:37:30 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-22 08:13:44 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-22 10:34:52 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-22 10:56:31 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-23 04:45:22 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-24 04:41:58 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-24 05:12:49 - IP: 192.168.100.37 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-24 05:32:16 - IP: 192.168.100.37 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-24 09:02:23 - IP: 192.168.100.37 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-24 09:03:07 - IP: 192.168.100.37 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-25 03:46:13 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-25 04:05:01 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-25 04:07:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-26 12:18:06 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-27 14:05:41 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
