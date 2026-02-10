@@ -128,3 +128,56 @@
 2026-01-25 04:07:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
 2026-01-26 12:18:06 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
 2026-01-27 14:05:41 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-28 06:33:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-29 03:51:16 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-29 05:23:01 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-31 07:55:54 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-01-31 08:59:03 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 05:46:14 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 05:50:21 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 07:04:32 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 07:17:12 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 07:18:16 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-03 07:18:20 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 07:24:53 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 09:57:22 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 09:59:49 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-03 10:00:58 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-06 02:44:03 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-06 11:27:23 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-07 05:13:07 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-07 14:17:54 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-08 13:55:14 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-09 07:26:57 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-09 08:47:59 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-09 09:23:53 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-09 09:44:36 - IP: ::1 - Username: admin - Status: FAILED - Details: Invalid credentials or inactive account
+2026-02-09 09:44:50 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-09 09:45:00 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-09 09:47:11 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-09 09:47:33 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-09 14:54:48 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:44:40 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:47:45 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:48:04 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 03:49:22 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:50:26 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:50:45 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 03:51:11 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 03:51:25 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 03:54:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 07:53:01 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 07:53:32 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 07:53:52 - IP: ::1 - Username: hr_staff - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 07:54:06 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 07:55:20 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 13:18:36 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-10 13:18:41 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-10 13:18:51 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:15:34 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:17:05 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:20:54 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:23:24 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:23:44 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Offline Gacha Login
+2026-02-10 14:24:41 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-10 14:29:02 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)

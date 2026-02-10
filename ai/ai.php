@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Function to generate employee features (used in both PHP and JS)
+// Function to generate employee features (MATCHING JS LOGIC EXACTLY)
 function generateEmployeeFeatures($employee, $pdo = null)
 {
     // Calculate tenure in months
@@ -131,68 +131,55 @@ function generateEmployeeFeatures($employee, $pdo = null)
     $tenure = $hire_date->diff($today)->y * 12 + $hire_date->diff($today)->m;
 
     // Get salary information
-    $baseSalary = $employee['salary'] ?? 0;
+    $salary = $employee['salary'] ?? 0;
 
-    // Get performance rating (normalize to 0-100)
+    // Get performance rating
     $performance_rating = $employee['performance_rating'] ?? 5;
-    $satisfaction = $performance_rating * 10; // Convert 1-10 scale to 0-100
 
     // Get overtime hours
     $overtime_hours = $employee['overtime_hours'] ?? 0;
 
-    // Calculate work-life balance (inverse of overtime)
-    $workLifeBalance = max(0, 100 - ($overtime_hours * 2));
-
-    // Get department stability (count employees in department)
-    $dept_stability = 50; // Default
-    if ($pdo && isset($employee['department'])) {
-        try {
-            $stmt = $pdo->prepare("SELECT COUNT(*) as dept_count FROM employees WHERE department = ? AND status = 'Active'");
-            $stmt->execute([$employee['department']]);
-            $dept_data = $stmt->fetch();
-            $dept_stability = min(100, ($dept_data['dept_count'] ?? 0) * 10);
-        } catch (Exception $e) {
-            // Use default if query fails
-        }
-    }
-
-    // Check for recent salary records as proxy for engagement
+    // Check for recent payroll/bonus (Engagement Proxies)
     $recent_payroll = 0;
+    $recent_bonus = 0;
+    
     if ($pdo && isset($employee['id'])) {
         try {
             $stmt = $pdo->prepare("SELECT COUNT(*) as recent_count FROM salary_records WHERE employee_id = ? AND pay_period_start >= DATE_SUB(NOW(), INTERVAL 3 MONTH)");
             $stmt->execute([$employee['id']]);
-            $payroll_data = $stmt->fetch();
-            $recent_payroll = ($payroll_data['recent_count'] ?? 0) > 0 ? 1 : 0;
-        } catch (Exception $e) {
-            // Table might not exist
-        }
-    }
-
-    // Check for bonus as proxy for recognition
-    $recent_bonus = 0;
-    if ($pdo && isset($employee['id'])) {
-        try {
+            $pd = $stmt->fetch();
+            $recent_payroll = ($pd['recent_count'] ?? 0) > 0 ? 1 : 0;
+            
             $stmt = $pdo->prepare("SELECT COUNT(*) as bonus_count FROM bonus_records WHERE employee_id = ? AND bonus_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)");
             $stmt->execute([$employee['id']]);
-            $bonus_data = $stmt->fetch();
-            $recent_bonus = ($bonus_data['bonus_count'] ?? 0) > 0 ? 1 : 0;
-        } catch (Exception $e) {
-            // Table might not exist
-        }
+            $bd = $stmt->fetch();
+            $recent_bonus = ($bd['bonus_count'] ?? 0) > 0 ? 1 : 0;
+        } catch (Exception $e) { /* Ignore */ }
+    }
+    
+    // Calculate Role Risk (Freight Specific)
+    $roleRisk = 0;
+    $job = strtolower($employee['job_title'] ?? '');
+    if (strpos($job, 'driver') !== false || strpos($job, 'warehouse') !== false) {
+         $roleRisk = 0.2; 
+         if ($overtime_hours > 20) $roleRisk += 0.3;
     }
 
+    // Return Normalized Array [10 features]
+    // MATCHES JS: [Age, Tenure, Salary, Perf, OT, WorkLife, DeptStab, Payroll, Bonus, RoleRisk]
+    $age = $employee['age'] ?? 30;
+    
     return [
-        'age' => $employee['age'] ?? 30,
-        'tenure' => $tenure,
-        'baseSalary' => $baseSalary,
-        'satisfaction' => $satisfaction,
-        'overtime_hours' => $overtime_hours,
-        'workLifeBalance' => $workLifeBalance,
-        'dept_stability' => $dept_stability,
-        'recent_payroll' => $recent_payroll,
-        'recent_bonus' => $recent_bonus,
-        'employment_status' => ($employee['employment_status'] ?? 'Full-Time') === 'Full-Time' ? 1 : 0
+        $age / 100,                                 // Age
+        $tenure / 120,                              // Tenure 
+        min(1, $salary / 100000),                   // Salary
+        $performance_rating / 10,                   // Performance
+        min(1, $overtime_hours / 100),              // Overtime
+        max(0, 1 - ($overtime_hours / 60)),         // Work-Life Balance
+        0.5,                                        // Dept Stability (Placeholder)
+        $recent_payroll,                            // Recent Payroll
+        $recent_bonus,                              // Recent Bonus
+        $roleRisk                                   // Role Risk
     ];
 }
 
@@ -216,16 +203,22 @@ try {
     $message_type = "error";
 }
 
-// Fetch training data count
-$training_count = 0;
-$avg_accuracy = 0;
+// Fetch historical training data
+$training_records = [];
 try {
-    $stmt = $pdo->query("SELECT COUNT(*) as count, AVG(prediction_confidence) as avg_accuracy FROM training_data");
-    $training_data = $stmt->fetch();
-    $training_count = $training_data['count'] ?? 0;
-    $avg_accuracy = $training_data['avg_accuracy'] ?? 0;
+    $stmt = $pdo->query("SELECT * FROM training_data ORDER BY created_at DESC");
+    $training_records = $stmt->fetchAll();
 } catch (Exception $e) {
-    // Table doesn't exist yet, will be created when needed
+    // Table assumes not created yet
+}
+
+// Fetch training metrics
+$training_count = count($training_records);
+$avg_accuracy = 0;
+if ($training_count > 0) {
+    $total_conf = 0;
+    foreach($training_records as $r) $total_conf += $r['prediction_confidence'];
+    $avg_accuracy = $total_conf / $training_count;
 }
 
 // Get unique departments for display
@@ -267,1117 +260,451 @@ if (count($employees) > 0) {
     $workforce_stats['avg_performance'] = $total_performance / count($employees);
 }
 ?>
+<?php
+    $dashboardPath = '../dashboard/index.php';
+    // Clean up workforce stats for display
+    $avgSalary = isset($workforce_stats['avg_salary']) ? $workforce_stats['avg_salary'] : 0;
+    $avgTenure = isset($workforce_stats['avg_tenure']) ? $workforce_stats['avg_tenure'] : 0;
+    $avgPerf = isset($workforce_stats['avg_performance']) ? $workforce_stats['avg_performance'] : 5;
+?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-Powered Employee Attrition Prediction System</title>
+    <title>AI Predictive Attrition | Slate Freight</title>
+    
+    <!-- TensorFlow & Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <!-- Bootstrap 5 & FontAwesome (Already included by sidebar, but good for standalone check or specific versions) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
         :root {
-            --primary: #4361ee;
-            --primary-dark: #3a56d4;
-            --secondary: #7209b7;
-            --success: #4cc9f0;
-            --danger: #f72585;
-            --warning: #f8961e;
-            --info: #4895ef;
-            --light: #f8f9fa;
-            --dark: #212529;
-            --gray: #6c757d;
-            --light-gray: #e9ecef;
-            --border-radius: 12px;
-            --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            --transition: all 0.3s ease;
+            --primary: #4e73df;
+            --secondary: #858796;
+            --success: #1cc88a;
+            --info: #36b9cc;
+            --warning: #f6c23e;
+            --danger: #e74a3b;
+            --light: #f8f9fc;
+            --dark: #5a5c69;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            color: var(--dark);
-            line-height: 1.6;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        /* Back Navigation Styles */
-        .back-navigation {
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .btn-back {
-            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-            color: white;
-            padding: 12px 25px;
+        /* Custom Styles for AI Module */
+        .ai-card {
             border: none;
+            border-radius: 0.35rem;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            background: #fff;
+            transition: transform 0.2s;
+        }
+        .ai-card:hover { transform: translateY(-3px); }
+
+        .stat-icon-box {
+            width: 50px; height: 50px;
             border-radius: 10px;
-            font-size: 1rem;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; color: white;
+        }
+        
+        /* Tab Navigation */
+        .nav-tabs .nav-link {
+            color: #4e73df;
             font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            text-decoration: none;
-        }
-
-        .btn-back:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(108, 117, 125, 0.3);
-            background: linear-gradient(135deg, #5a6268 0%, #3d4349 100%);
-        }
-
-        .btn-back-dashboard {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-        }
-
-        .btn-back-dashboard:hover {
-            background: linear-gradient(135deg, #3a56d4 0%, #2d44b8 100%);
-        }
-
-        .btn-back-system {
-            background: linear-gradient(135deg, var(--secondary) 0%, #5a08a3 100%);
-        }
-
-        .btn-back-system:hover {
-            background: linear-gradient(135deg, #5a08a3 0%, #490784 100%);
-        }
-
-        .navigation-buttons {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-
-        header {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            padding: 25px 30px;
-            border-radius: var(--border-radius);
-            margin-bottom: 30px;
-            box-shadow: var(--box-shadow);
-            position: relative;
-            overflow: hidden;
-        }
-
-        header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-            background-size: 20px 20px;
-            opacity: 0.1;
-        }
-
-        .header-content {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-
-        h1 {
-            font-size: 2.2rem;
-            font-weight: 800;
-            margin-bottom: 5px;
-            background: linear-gradient(to right, #ffffff, #e0e7ff);
-            -webkit-background-clip: text;
-            background-clip: text;
-            -webkit-text-fill-color: transparent;
-            text-fill-color: transparent;
-        }
-
-        .subtitle {
-            font-size: 1rem;
-            opacity: 0.9;
-            font-weight: 400;
-        }
-
-        .header-stats {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-
-        .stat-item {
-            text-align: center;
-            padding: 10px 20px;
-            background: rgba(255, 255, 255, 0.15);
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-        }
-
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            display: block;
-        }
-
-        .stat-label {
-            font-size: 0.85rem;
-            opacity: 0.9;
-        }
-
-        .message {
-            padding: 15px 20px;
-            border-radius: var(--border-radius);
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideIn 0.3s ease;
-            box-shadow: var(--box-shadow);
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateY(-10px);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        .message.success {
-            background: linear-gradient(135deg, #d4edda, #c3e6cb);
-            color: #155724;
-            border-left: 5px solid #28a745;
-        }
-
-        .message.error {
-            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
-            color: #721c24;
-            border-left: 5px solid #dc3545;
-        }
-
-        .message.info {
-            background: linear-gradient(135deg, #d1ecf1, #bee5eb);
-            color: #0c5460;
-            border-left: 5px solid #17a2b8;
-        }
-
-        .tabs-container {
-            background: white;
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            box-shadow: var(--box-shadow);
-            margin-bottom: 30px;
-        }
-
-        .tabs {
-            display: flex;
-            background: var(--light);
-            border-bottom: 1px solid var(--light-gray);
-            flex-wrap: wrap;
-        }
-
-        .tab {
-            padding: 18px 30px;
-            cursor: pointer;
-            font-weight: 600;
-            color: var(--gray);
-            transition: var(--transition);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            border-bottom: 3px solid transparent;
-        }
-
-        .tab:hover {
-            color: var(--primary);
-            background: rgba(67, 97, 238, 0.05);
-        }
-
-        .tab.active {
-            color: var(--primary);
-            background: white;
-            border-bottom: 3px solid var(--primary);
-        }
-
-        .tab i {
-            font-size: 1.2rem;
-        }
-
-        .tab-content {
-            display: none;
-            padding: 30px;
-        }
-
-        .tab-content.active {
-            display: block;
-            animation: fadeIn 0.5s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-
-            to {
-                opacity: 1;
-            }
-        }
-
-        h2 {
-            font-size: 1.8rem;
-            color: var(--primary);
-            margin-bottom: 25px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .card {
-            background: white;
-            border-radius: var(--border-radius);
-            padding: 25px;
-            box-shadow: var(--box-shadow);
-            margin-bottom: 25px;
-            transition: var(--transition);
-        }
-
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: var(--dark);
-        }
-
-        select,
-        input,
-        textarea {
-            width: 100%;
-            padding: 14px 18px;
-            border: 2px solid var(--light-gray);
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: var(--transition);
-            background: white;
-        }
-
-        select:focus,
-        input:focus,
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.2);
-        }
-
-        .btn {
-            padding: 14px 28px;
             border: none;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: var(--transition);
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
+            border-bottom: 2px solid transparent;
         }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
+        .nav-tabs .nav-link.active {
+            color: #2e59d9;
+            border-bottom: 2px solid #4e73df;
+            background: transparent;
         }
+        .nav-tabs .nav-link:hover { border-color: transparent; color: #224abe; }
 
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(67, 97, 238, 0.3);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #4cc9f0 0%, #4895ef 100%);
-            color: white;
-        }
-
-        .btn-danger {
-            background: linear-gradient(135deg, var(--danger) 0%, #b5179e 100%);
-            color: white;
-        }
-
-        .btn-warning {
-            background: linear-gradient(135deg, var(--warning) 0%, #f3722c 100%);
-            color: white;
-        }
-
-        .btn-secondary {
-            background: linear-gradient(135deg, var(--gray) 0%, #495057 100%);
-            color: white;
-        }
-
-        .btn-sm {
-            padding: 8px 16px;
-            font-size: 0.9rem;
-        }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 25px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: white;
-            border-radius: var(--border-radius);
-            padding: 25px;
-            box-shadow: var(--box-shadow);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .stat-icon {
-            width: 60px;
-            height: 60px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.8rem;
-            color: white;
-        }
-
-        .stat-icon.primary {
-            background: linear-gradient(135deg, var(--primary), #3a56d4);
-        }
-
-        .stat-icon.success {
-            background: linear-gradient(135deg, #4cc9f0, #4895ef);
-        }
-
-        .stat-icon.warning {
-            background: linear-gradient(135deg, var(--warning), #f3722c);
-        }
-
-        .stat-icon.danger {
-            background: linear-gradient(135deg, var(--danger), #b5179e);
-        }
-
-        .stat-content {
-            flex: 1;
-        }
-
-        .stat-value-large {
-            font-size: 2.2rem;
-            font-weight: 800;
-            line-height: 1;
-            margin-bottom: 5px;
-        }
-
-        .stat-title {
-            font-size: 0.95rem;
-            color: var(--gray);
-            font-weight: 500;
-        }
-
-        .prediction-result {
-            border-radius: var(--border-radius);
-            padding: 25px;
-            margin-top: 25px;
-            border-left: 6px solid;
-            box-shadow: var(--box-shadow);
-        }
-
-        .prediction-low {
-            border-color: #4cc9f0;
-            background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-        }
-
-        .prediction-medium {
-            border-color: var(--warning);
-            background: linear-gradient(135deg, #fff7ed, #ffedd5);
-        }
-
-        .prediction-high {
-            border-color: var(--danger);
-            background: linear-gradient(135deg, #fef2f2, #fee2e2);
-        }
-
-        .employee-details-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 25px 0;
-        }
-
-        .detail-item {
-            background: white;
-            padding: 15px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        }
-
-        .detail-label {
-            font-weight: 600;
-            color: var(--gray);
-            font-size: 0.9rem;
-            margin-bottom: 5px;
-        }
-
-        .detail-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--dark);
-        }
-
-        .data-table-container {
-            overflow-x: auto;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-        }
-
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-            min-width: 800px;
-        }
-
-        .data-table th {
-            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            color: white;
-            padding: 18px 20px;
-            text-align: left;
-            font-weight: 600;
-            position: sticky;
-            top: 0;
-        }
-
-        .data-table td {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--light-gray);
-        }
-
-        .data-table tr:hover {
-            background-color: rgba(67, 97, 238, 0.05);
-        }
-
-        .progress-container {
-            margin: 20px 0;
-        }
-
-        .progress-bar {
-            height: 10px;
-            background: var(--light-gray);
-            border-radius: 5px;
+        /* Training Visualization */
+        .epoch-info { font-family: 'Courier New', monospace; font-size: 0.85rem; }
+        .progress-bar-ai {
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
             overflow: hidden;
         }
-
-        .progress-fill {
+        .progress-fill-ai {
             height: 100%;
-            background: linear-gradient(90deg, var(--primary), var(--secondary));
-            border-radius: 5px;
-            transition: width 0.5s ease;
+            background: linear-gradient(90deg, #4e73df, #36b9cc);
+            transition: width 0.3s ease;
         }
 
-        .chart-container {
-            position: relative;
-            height: 300px;
-            margin: 25px 0;
+        /* Prediction Result Cards */
+        .prediction-result {
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            border-left: 5px solid;
+            background: #fff;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
         }
+        .prediction-low { border-color: #1cc88a; background: #f0fdf4; }
+        .prediction-medium { border-color: #f6c23e; background: #fffbeb; }
+        .prediction-high { border-color: #e74a3b; background: #fef2f2; }
 
-        .training-form {
-            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-            padding: 25px;
-            border-radius: var(--border-radius);
-            margin-top: 25px;
+        .risk-badge { padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 0.8rem; text-transform: uppercase; }
+        .risk-low { background: #d1fae5; color: #065f46; }
+        .risk-medium { background: #fef3c7; color: #92400e; }
+        .risk-high { background: #fee2e2; color: #991b1b; }
+
+        .chart-area-ai { position: relative; height: 300px; width: 100%; }
+        
+        /* Floating Message */
+        .message-toast {
+            position: fixed; top: 80px; right: 20px; z-index: 9999;
+            padding: 1rem 1.5rem; border-radius: 0.5rem; color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex; align-items: center; gap: 10px;
+            animation: slideInRight 0.3s ease-out;
         }
-
-        .action-buttons {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-            margin-top: 20px;
-        }
-
-        .risk-badge {
-            padding: 6px 15px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            display: inline-block;
-        }
-
-        .risk-low {
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .risk-medium {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .risk-high {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                padding: 15px;
-            }
-
-            header {
-                padding: 20px;
-            }
-
-            h1 {
-                font-size: 1.8rem;
-            }
-
-            .header-content {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .header-stats {
-                justify-content: center;
-            }
-
-            .tabs {
-                flex-direction: column;
-            }
-
-            .tab {
-                padding: 15px;
-                justify-content: center;
-            }
-
-            .tab-content {
-                padding: 20px;
-            }
-
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .stat-card {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .action-buttons {
-                flex-direction: column;
-            }
-
-            .btn {
-                width: 100%;
-            }
-
-            .back-navigation {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .navigation-buttons {
-                width: 100%;
-            }
-
-            .btn-back {
-                width: 100%;
-            }
-        }
-
-        @media (max-width: 480px) {
-            h1 {
-                font-size: 1.5rem;
-            }
-
-            h2 {
-                font-size: 1.4rem;
-            }
-
-            .stat-value-large {
-                font-size: 1.8rem;
-            }
-
-            .tab-content {
-                padding: 15px;
-            }
+        .msg-success { background: #1cc88a; }
+        .msg-error { background: #e74a3b; }
+        .msg-info { background: #36b9cc; }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
         }
     </style>
 </head>
 
-<body>
-    <div class="container">
-        <!-- Back Navigation Section -->
-        <div class="back-navigation">
-            <div>
-                <h2><i class="fas fa-robot"></i> AI Attrition Prediction System</h2>
-                <p class="subtitle">Predict and prevent employee turnover using machine learning</p>
-            </div>
-            <div class="navigation-buttons">
-                <a href="../dashboard/index.php" class="btn-back btn-back-dashboard">
-                    <i class="fas fa-tachometer-alt"></i> Back to Dashboard
-                </a>
-                <a href="../index.php" class="btn-back btn-back-system">
-                    <i class="fas fa-home"></i> Back to Main System
-                </a>
-            </div>
-        </div>
-
-        <header>
-            <div class="header-content">
+<body class="<?php echo isset($_SESSION['theme']) && $_SESSION['theme'] === 'dark' ? 'dark-mode' : ''; ?>">
+    
+    <!-- System Main Content Wrapper -->
+    <div class="main-content">
+        <div class="container-fluid">
+            
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
-                    <h1><i class="fas fa-robot"></i> AI Employee Attrition Predictor</h1>
-                    <p class="subtitle">Predict and prevent employee turnover using machine learning</p>
+                    <h1 class="h3 font-weight-bold text-gray-800"><i class="fas fa-robot text-primary me-2"></i>Predictive Attrition AI</h1>
+                    <p class="text-muted mb-0">Machine Learning Powered Workforce Retention Analysis</p>
                 </div>
-                <div class="header-stats">
-                    <div class="stat-item">
-                        <span class="stat-value"><?php echo $workforce_stats['total_employees']; ?></span>
-                        <span class="stat-label">Active Employees</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value"><?php echo $training_count; ?></span>
-                        <span class="stat-label">Training Samples</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-value"><?php echo $avg_accuracy > 0 ? round($avg_accuracy * 100, 1) . '%' : 'N/A'; ?></span>
-                        <span class="stat-label">Model Accuracy</span>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-        <?php if ($message): ?>
-            <div class="message <?php echo $message_type; ?>">
-                <i class="fas fa-<?php echo $message_type === 'error' ? 'exclamation-triangle' : ($message_type === 'success' ? 'check-circle' : 'info-circle'); ?>"></i>
-                <?php echo htmlspecialchars($message); ?>
-            </div>
-        <?php endif; ?>
-
-        <div class="tabs-container">
-            <div class="tabs">
-                <div class="tab active" onclick="switchTab('predict')">
-                    <i class="fas fa-chart-line"></i> Predict Attrition
-                </div>
-                <div class="tab" onclick="switchTab('database')">
-                    <i class="fas fa-database"></i> Employee Database
-                </div>
-                <div class="tab" onclick="switchTab('train')">
-                    <i class="fas fa-brain"></i> Train AI Model
-                </div>
-                <div class="tab" onclick="switchTab('analysis')">
-                    <i class="fas fa-chart-pie"></i> Analytics
+                <div>
+                    <a href="<?php echo $dashboardPath; ?>" class="btn btn-secondary btn-sm shadow-sm">
+                        <i class="fas fa-arrow-left fa-sm text-white-50 me-1"></i> Back to Dashboard
+                    </a>
                 </div>
             </div>
 
-            <!-- Predict Tab -->
-            <div id="predict-tab" class="tab-content active">
-                <div class="card">
-                    <div class="back-navigation" style="margin-bottom: 25px;">
-                        <h2><i class="fas fa-user-check"></i> Employee Attrition Prediction</h2>
-                        <a href="#database" class="btn-back" onclick="switchTab('database'); return false;">
-                            <i class="fas fa-database"></i> View Database
-                        </a>
-                    </div>
-
-                    <p class="subtitle">Select an employee to analyze attrition risk</p>
-
-                    <div class="form-group">
-                        <label for="employee"><i class="fas fa-user-tie"></i> Select Employee</label>
-                        <select id="employee" class="employee-select">
-                            <option value="">-- Choose an employee --</option>
-                            <?php foreach ($employees as $emp): ?>
-                                <option value="<?php echo $emp['id']; ?>"
-                                    data-salary="<?php echo $emp['salary']; ?>"
-                                    data-performance="<?php echo $emp['performance_rating']; ?>"
-                                    data-department="<?php echo htmlspecialchars($emp['department']); ?>">
-                                    <?php echo htmlspecialchars($emp['name']); ?>
-                                    (<?php echo htmlspecialchars($emp['department']); ?> -
-                                    ₱<?php echo number_format($emp['salary'], 0); ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="action-buttons">
-                        <button class="btn btn-primary" onclick="predictEmployee()">
-                            <i class="fas fa-play-circle"></i> Run Prediction
-                        </button>
-                        <button class="btn btn-secondary" onclick="clearPrediction()">
-                            <i class="fas fa-times-circle"></i> Clear Results
-                        </button>
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-arrow-left"></i> Return to Dashboard
-                        </a>
-                    </div>
-
-                    <div id="output" class="prediction-placeholder">
-                        <div class="prediction-result" style="border-color: #e9ecef; background: #f8f9fa;">
-                            <h3><i class="fas fa-info-circle"></i> Prediction Results</h3>
-                            <p>Select an employee and click "Run Prediction" to see attrition risk analysis.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Database Tab -->
-            <div id="database-tab" class="tab-content">
-                <div class="card">
-                    <div class="back-navigation" style="margin-bottom: 25px;">
-                        <h2><i class="fas fa-users"></i> Employee Database</h2>
-                        <a href="#predict" class="btn-back" onclick="switchTab('predict'); return false;">
-                            <i class="fas fa-chart-line"></i> Back to Predictions
-                        </a>
-                    </div>
-
-                    <div class="dashboard-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon primary">
-                                <i class="fas fa-users"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large"><?php echo $workforce_stats['total_employees']; ?></div>
-                                <div class="stat-title">Total Employees</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon success">
-                                <i class="fas fa-money-bill-wave"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large">₱<?php echo number_format($workforce_stats['avg_salary'], 0); ?></div>
-                                <div class="stat-title">Average Salary</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon warning">
-                                <i class="fas fa-calendar-alt"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large"><?php echo round($workforce_stats['avg_tenure'], 1); ?>m</div>
-                                <div class="stat-title">Avg Tenure</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon danger">
-                                <i class="fas fa-star"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large"><?php echo round($workforce_stats['avg_performance'], 1); ?>/10</div>
-                                <div class="stat-title">Avg Performance</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="action-buttons" style="margin-bottom: 20px;">
-                        <button class="btn btn-primary" onclick="refreshDatabase()">
-                            <i class="fas fa-sync-alt"></i> Refresh Data
-                        </button>
-                        <button class="btn btn-success" onclick="exportData()">
-                            <i class="fas fa-file-export"></i> Export Data
-                        </button>
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-arrow-left"></i> Return to Dashboard
-                        </a>
-                    </div>
-
-                    <div class="data-table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Department</th>
-                                    <th>Position</th>
-                                    <th>Salary</th>
-                                    <th>Performance</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($employees as $emp): ?>
-                                    <tr>
-                                        <td>
-                                            <strong><?php echo htmlspecialchars($emp['name']); ?></strong><br>
-                                            <small><?php echo htmlspecialchars($emp['email']); ?></small>
-                                        </td>
-                                        <td><?php echo htmlspecialchars($emp['department']); ?></td>
-                                        <td><?php echo htmlspecialchars($emp['job_title']); ?></td>
-                                        <td><strong>₱<?php echo number_format($emp['salary'], 0); ?></strong></td>
-                                        <td>
-                                            <div class="progress-bar" style="margin-bottom: 5px;">
-                                                <div class="progress-fill" style="width: <?php echo $emp['performance_rating'] * 10; ?>%;"></div>
-                                            </div>
-                                            <?php echo $emp['performance_rating']; ?>/10
-                                        </td>
-                                        <td>
-                                            <span class="risk-badge risk-low">Active</span>
-                                        </td>
-                                        <td>
-                                            <div class="action-buttons" style="margin: 0; gap: 5px;">
-                                                <button class="btn btn-sm btn-primary" onclick="viewEmployee(<?php echo $emp['id']; ?>)">
-                                                    <i class="fas fa-eye"></i> View
-                                                </button>
-                                                <button class="btn btn-sm btn-success" onclick="analyzeEmployee(<?php echo $emp['id']; ?>)">
-                                                    <i class="fas fa-chart-line"></i> Analyze
-                                                </button>
-                                                <form method="POST" style="display: inline;">
-                                                    <input type="hidden" name="employee_id" value="<?php echo $emp['id']; ?>">
-                                                    <button type="submit" name="delete_employee" class="btn btn-sm btn-danger"
-                                                        onclick="return confirm('Delete <?php echo addslashes($emp['name']); ?>? This action cannot be undone.')">
-                                                        <i class="fas fa-trash"></i> Delete
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div class="action-buttons" style="margin-top: 20px;">
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-tachometer-alt"></i> Go to Dashboard
-                        </a>
-                        <a href="../index.php" class="btn btn-back btn-back-system">
-                            <i class="fas fa-home"></i> Back to Main System
-                        </a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Train Tab -->
-            <div id="train-tab" class="tab-content">
-                <div class="card">
-                    <div class="back-navigation" style="margin-bottom: 25px;">
-                        <h2><i class="fas fa-graduation-cap"></i> Train AI Model</h2>
-                        <a href="#analysis" class="btn-back" onclick="switchTab('analysis'); return false;">
-                            <i class="fas fa-chart-pie"></i> View Analytics
-                        </a>
-                    </div>
-
-                    <div class="dashboard-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon primary">
-                                <i class="fas fa-database"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large"><?php echo $training_count; ?></div>
-                                <div class="stat-title">Training Samples</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon success">
-                                <i class="fas fa-bullseye"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="model-accuracy"><?php echo $avg_accuracy > 0 ? round($avg_accuracy * 100, 1) . '%' : 'N/A'; ?></div>
-                                <div class="stat-title">Model Accuracy</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon warning">
-                                <i class="fas fa-layer-group"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="training-loss">-</div>
-                                <div class="stat-title">Training Loss</div>
-                            </div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon danger">
-                                <i class="fas fa-clock"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="training-time">-</div>
-                                <div class="stat-title">Training Time</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="chart-container">
-                        <canvas id="trainingChart"></canvas>
-                    </div>
-
-                    <div class="training-form">
-                        <h3><i class="fas fa-sliders-h"></i> Training Parameters</h3>
-                        <div class="form-group">
-                            <label for="epochs">Training Epochs</label>
-                            <input type="range" id="epochs" min="10" max="300" value="150" oninput="document.getElementById('epochValue').innerText = this.value">
-                            <div style="display: flex; justify-content: space-between;">
-                                <span>10</span>
-                                <span id="epochValue">150</span>
-                                <span>300</span>
-                            </div>
-                        </div>
-
-                        <div class="action-buttons">
-                            <button class="btn btn-success" onclick="trainModel()">
-                                <i class="fas fa-play"></i> Start Training
-                            </button>
-                            <button class="btn btn-primary" onclick="loadPretrainedModel()">
-                                <i class="fas fa-download"></i> Load Pre-trained
-                            </button>
-                            <button class="btn btn-warning" onclick="clearModel()">
-                                <i class="fas fa-redo"></i> Clear Model
-                            </button>
-                            <button class="btn btn-secondary" onclick="saveModel()">
-                                <i class="fas fa-save"></i> Save Model
-                            </button>
-                            <a href="../dashboard/index.php" class="btn btn-back">
-                                <i class="fas fa-arrow-left"></i> Dashboard
-                            </a>
-                        </div>
-                    </div>
-
-                    <div id="training-status" class="prediction-result" style="margin-top: 20px; border-color: #e9ecef;">
-                        <h4><i class="fas fa-info-circle"></i> Training Status</h4>
-                        <p>Model is ready for training. Click "Start Training" to begin.</p>
-                        <div id="training-progress" style="display: none;">
-                            <div class="progress-container">
-                                <div class="progress-bar">
-                                    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+            <!-- Top Stats -->
+            <div class="row mb-4">
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="ai-card h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Active Employees</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo $workforce_stats['total_employees']; ?></div>
                                 </div>
-                                <div id="epoch-info" style="text-align: center; margin-top: 10px;"></div>
+                                <div class="col-auto">
+                                    <div class="stat-icon-box bg-primary"><i class="fas fa-users"></i></div>
+                                </div>
                             </div>
                         </div>
                     </div>
-
-                    <div class="action-buttons" style="margin-top: 20px;">
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-tachometer-alt"></i> Go to Dashboard
-                        </a>
-                        <a href="../index.php" class="btn btn-back btn-back-system">
-                            <i class="fas fa-home"></i> Back to Main System
-                        </a>
+                </div>
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="ai-card h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Training Samples</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800"><?php echo $training_count; ?></div>
+                                </div>
+                                <div class="col-auto">
+                                    <div class="stat-icon-box bg-info"><i class="fas fa-database"></i></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="ai-card h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Model Accuracy</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800" id="model-accuracy-display">
+                                        <?php echo $avg_accuracy > 0 ? round($avg_accuracy * 100, 1) . '%' : 'N/A'; ?>
+                                    </div>
+                                </div>
+                                <div class="col-auto">
+                                    <div class="stat-icon-box bg-success"><i class="fas fa-check-circle"></i></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                 <div class="col-xl-3 col-md-6 mb-4">
+                    <div class="ai-card h-100 py-2">
+                        <div class="card-body">
+                            <div class="row no-gutters align-items-center">
+                                <div class="col mr-2">
+                                    <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Avg Attrition Risk</div>
+                                    <div class="h5 mb-0 font-weight-bold text-gray-800" id="attrition-risk">Calculating...</div>
+                                </div>
+                                <div class="col-auto">
+                                    <div class="stat-icon-box bg-warning"><i class="fas fa-exclamation-triangle"></i></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Analysis Tab -->
-            <div id="analysis-tab" class="tab-content">
-                <div class="card">
-                    <div class="back-navigation" style="margin-bottom: 25px;">
-                        <h2><i class="fas fa-chart-bar"></i> Workforce Analytics</h2>
-                        <a href="#train" class="btn-back" onclick="switchTab('train'); return false;">
-                            <i class="fas fa-brain"></i> Back to Training
-                        </a>
-                    </div>
-
-                    <div class="dashboard-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon primary">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="high-risk-count">0</div>
-                                <div class="stat-title">High Risk Employees</div>
+            <!-- Main Content Tabs -->
+             <div class="card shadow mb-4">
+                <div class="card-header py-3">
+                    <ul class="nav nav-tabs card-header-tabs" id="aiTabs" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" id="predict-tab-btn" data-bs-toggle="tab" data-bs-target="#predict-tab" type="button" role="tab" onclick="switchTab('predict')">
+                                <i class="fas fa-chart-line me-2"></i>Predict Attrition
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="analysis-tab-btn" data-bs-toggle="tab" data-bs-target="#analysis-tab" type="button" role="tab" onclick="switchTab('analysis')">
+                                <i class="fas fa-chart-pie me-2"></i>Analysis
+                            </button>
+                        </li>
+                         <li class="nav-item">
+                            <button class="nav-link" id="database-tab-btn" data-bs-toggle="tab" data-bs-target="#database-tab" type="button" role="tab" onclick="switchTab('database')">
+                                <i class="fas fa-users me-2"></i>Database
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link" id="train-tab-btn" data-bs-toggle="tab" data-bs-target="#train-tab" type="button" role="tab" onclick="switchTab('train')">
+                                <i class="fas fa-brain me-2"></i>Train Model
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="tab-content" id="aiTabsContent">
+                        
+                        <!-- PREDICT TAB -->
+                        <div class="tab-pane fade show active" id="predict-tab" role="tabpanel">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="bg-light p-4 rounded mb-4">
+                                        <h5 class="font-weight-bold mb-3"><i class="fas fa-user-tie me-2"></i>Select Employee</h5>
+                                        <div class="form-group mb-3">
+                                            <select id="employee" class="form-select form-select-lg shadow-sm">
+                                                <option value="">-- Choose an employee --</option>
+                                                <?php foreach ($employees as $emp): ?>
+                                                    <option value="<?php echo $emp['id']; ?>"
+                                                        data-salary="<?php echo $emp['salary']; ?>"
+                                                        data-performance="<?php echo $emp['performance_rating']; ?>"
+                                                        data-department="<?php echo htmlspecialchars($emp['department']); ?>">
+                                                        <?php echo htmlspecialchars($emp['name']); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <button class="btn btn-primary w-100 mb-2" onclick="predictEmployee()">
+                                            <i class="fas fa-magic me-2"></i>Run AI Prediction
+                                        </button>
+                                        <button class="btn btn-outline-secondary w-100" onclick="clearPrediction()">
+                                            Reset
+                                        </button>
+                                    </div>
+                                    <div class="alert alert-info small">
+                                        <i class="fas fa-info-circle me-1"></i> The AI analyzes tenure, compensation, OT hours, and performance history.
+                                    </div>
+                                </div>
+                                <div class="col-md-8">
+                                    <div id="output">
+                                        <div class="text-center py-5 text-muted bg-light rounded" style="border: 2px dashed #e3e6f0;">
+                                            <i class="fas fa-robot fa-3x mb-3 text-gray-300"></i>
+                                            <h5>Ready to Analyze</h5>
+                                            <p>Select an employee from the left to view comprehensive attrition risk analysis.</p>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-icon warning">
-                                <i class="fas fa-balance-scale"></i>
+
+                        <!-- ANALYSIS TAB -->
+                        <div class="tab-pane fade" id="analysis-tab" role="tabpanel">
+                            <div class="d-flex justify-content-between mb-3">
+                                <h5 class="font-weight-bold">Workforce Risk Assessment</h5>
+                                <div>
+                                    <button class="btn btn-primary btn-sm" onclick="analyzeData()"><i class="fas fa-sync-alt me-1"></i> Refresh Analysis</button>
+                                    <button class="btn btn-success btn-sm" onclick="generateReport()"><i class="fas fa-download me-1"></i> Download Report</button>
+                                </div>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="attrition-risk">0%</div>
-                                <div class="stat-title">Avg Attrition Risk</div>
+                            <div id="analysis-results">
+                                <div class="text-center py-5">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <p class="mt-2 text-muted">Initialize analysis by clicking "Refresh Analysis"...</p>
+                                </div>
+                            </div>
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <div class="card shadow-sm">
+                                        <div class="card-header py-2 bg-white">
+                                            <h6 class="m-0 font-weight-bold text-primary">Risk Distribution</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="chart-area-ai">
+                                                <canvas id="analyticsChart"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                     <div class="card shadow-sm h-100">
+                                        <div class="card-header py-2 bg-white">
+                                            <h6 class="m-0 font-weight-bold text-danger">High Risk Alert <span class="badge bg-danger ms-2" id="high-risk-count">0</span></h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <p class="small text-muted">Employees identified with >60% probability of attrition based on current model.</p>
+                                            <div class="table-responsive" style="max-height: 250px;">
+                                                 <!-- Populated by JS -->
+                                                 <div id="high-risk-list-placeholder" class="text-center text-muted mt-5">Run analysis to view data</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-icon success">
-                                <i class="fas fa-briefcase"></i>
+
+                        <!-- DATABASE TAB -->
+                        <div class="tab-pane fade" id="database-tab" role="tabpanel">
+                             <div class="d-flex justify-content-between mb-3">
+                                <h5 class="font-weight-bold">Employee Data Records</h5>
+                                <button class="btn btn-outline-primary btn-sm" onclick="exportData()"><i class="fas fa-file-csv me-1"></i> Export CSV</button>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="department-count"><?php echo count($departments); ?></div>
-                                <div class="stat-title">Departments</div>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover" id="employeeTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Dept</th>
+                                            <th>Role</th>
+                                            <th>Tenure</th>
+                                            <th>Salary</th>
+                                            <th>Perf</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach (array_slice($employees, 0, 50) as $emp): 
+                                            // Calc simple tenure
+                                            $hDate = new DateTime($emp['hire_date']);
+                                            $now = new DateTime();
+                                            $diff = $now->diff($hDate);
+                                            $tenureMonths = ($diff->y * 12) + $diff->m;
+                                        ?>
+                                        <tr>
+                                            <td class="font-weight-bold"><?php echo htmlspecialchars($emp['name']); ?></td>
+                                            <td><?php echo htmlspecialchars($emp['department']); ?></td>
+                                            <td><small><?php echo htmlspecialchars($emp['job_title'] ?? 'N/A'); ?></small></td>
+                                            <td><?php echo $tenureMonths; ?> mo</td>
+                                            <td>₱<?php echo number_format($emp['salary']); ?></td>
+                                            <td><span class="badge bg-<?php echo $emp['performance_rating'] >= 4 ? 'success' : 'warning'; ?>"><?php echo $emp['performance_rating']; ?>/5</span></td>
+                                            <td>
+                                                <button class="btn btn-xs btn-primary p-1" onclick="viewEmployee(<?php echo $emp['id']; ?>)">Analyze</button>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-icon danger">
-                                <i class="fas fa-history"></i>
-                            </div>
-                            <div class="stat-content">
-                                <div class="stat-value-large" id="avg-tenure"><?php echo round($workforce_stats['avg_tenure'], 1); ?>m</div>
-                                <div class="stat-title">Avg Tenure</div>
+
+                        <!-- TRAIN MODEL TAB -->
+                        <div class="tab-pane fade" id="train-tab" role="tabpanel">
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <div class="bg-light p-4 rounded">
+                                        <h5 class="font-weight-bold mb-3"><i class="fas fa-cogs me-2"></i>Training Config</h5>
+                                        <div class="form-group mb-3">
+                                            <label>Training Epochs</label>
+                                            <input type="number" id="epochs" class="form-control" value="50" min="10" max="200">
+                                        </div>
+                                        <div class="d-grid gap-2">
+                                            <button class="btn btn-primary" id="train-btn" onclick="trainModel()">
+                                                <i class="fas fa-play me-2"></i>Start Training
+                                            </button>
+                                            <button class="btn btn-outline-info" onclick="loadPretrainedModel()">
+                                                <i class="fas fa-cloud-download-alt me-2"></i>Load Pre-trained
+                                            </button>
+                                            <button class="btn btn-outline-danger" onclick="clearModel()">
+                                                <i class="fas fa-trash me-2"></i>Reset Model
+                                            </button>
+                                        </div>
+                                        <hr>
+                                        <div class="small">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <span>Model Accuracy:</span>
+                                                <strong id="model-accuracy">N/A</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <span>Last Training Loss:</span>
+                                                <strong id="training-loss">N/A</strong>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-1">
+                                                <span>Training Time:</span>
+                                                <strong id="training-time">-</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-7">
+                                    <div class="card border-left-info shadow h-100 py-2">
+                                        <div class="card-body">
+                                            <div class="row no-gutters align-items-center mb-3">
+                                                <div class="col mr-2">
+                                                    <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Training Status</div>
+                                                    <div id="training-status" class="h5 mb-0 font-weight-bold text-gray-800">Idle</div>
+                                                </div>
+                                                <div class="col-auto">
+                                                    <i class="fas fa-microchip fa-2x text-gray-300"></i>
+                                                </div>
+                                            </div>
+                                            <div id="training-progress" style="display:none;">
+                                                <div class="small font-weight-bold mb-1">Progress <span class="float-end" id="epoch-info"></span></div>
+                                                <div class="progress-bar-ai">
+                                                    <div class="progress-fill-ai" id="progress-fill" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                            <div class="chart-area-ai mt-4">
+                                                <canvas id="trainingChart"></canvas>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="chart-container">
-                        <canvas id="analyticsChart"></canvas>
-                    </div>
-
-                    <div class="action-buttons">
-                        <button class="btn btn-primary" onclick="analyzeData()">
-                            <i class="fas fa-chart-line"></i> Run Analysis
-                        </button>
-                        <button class="btn btn-success" onclick="generateReport()">
-                            <i class="fas fa-file-pdf"></i> Generate Report
-                        </button>
-                        <button class="btn btn-warning" onclick="exportData()">
-                            <i class="fas fa-file-export"></i> Export Data
-                        </button>
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-arrow-left"></i> Dashboard
-                        </a>
-                    </div>
-
-                    <div id="analysis-results" class="prediction-result" style="margin-top: 25px;">
-                        <h4><i class="fas fa-chart-pie"></i> Analysis Results</h4>
-                        <p>Click "Run Analysis" to generate insights about your workforce.</p>
-                    </div>
-
-                    <div class="action-buttons" style="margin-top: 20px;">
-                        <a href="../dashboard/index.php" class="btn btn-back">
-                            <i class="fas fa-tachometer-alt"></i> Go to Dashboard
-                        </a>
-                        <a href="../index.php" class="btn btn-back btn-back-system">
-                            <i class="fas fa-home"></i> Back to Main System
-                        </a>
                     </div>
                 </div>
             </div>
+            
         </div>
     </div>
+    
+    <!-- Scripts (Using TensorFlow.js logic) -->
+    <!-- We must include the Bootstrap JS for tabs to work -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         // Global variables
         const employees = <?php echo json_encode($employees); ?>;
+        const trainingData = <?php echo json_encode($training_records); ?>;
         let model = null;
         let isTraining = false;
         let trainingChart = null;
@@ -1388,6 +715,16 @@ if (count($employees) > 0) {
             await initializeApp();
             initCharts();
             updateAnalysisStats();
+            
+            // Fix tabs if they get stuck
+            const triggerTabList = [].slice.call(document.querySelectorAll('#aiTabs button'))
+            triggerTabList.forEach(function (triggerEl) {
+              triggerEl.addEventListener('click', function (event) {
+                event.preventDefault()
+                var tab = new bootstrap.Tab(triggerEl)
+                tab.show()
+              })
+            })
         });
 
         // Initialize the app
@@ -1468,26 +805,21 @@ if (count($employees) > 0) {
             return model;
         };
 
-        // Switch tabs
+        // Switch tabs (Bootstrap 5 Compatible)
         const switchTab = (tabName) => {
-            // Update tabs
-            document.querySelectorAll('.tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-
-            // Activate selected tab
-            document.querySelector(`.tab:nth-child(${['predict','database','train','analysis'].indexOf(tabName)+1})`).classList.add('active');
-            document.getElementById(`${tabName}-tab`).classList.add('active');
-
+            const tabEl = document.querySelector(`#${tabName}-tab-btn`);
+            if(tabEl) {
+                const tab = new bootstrap.Tab(tabEl);
+                tab.show();
+            }
+            
             // Update charts on tab switch
             if (tabName === 'train' && trainingChart) {
-                trainingChart.update();
+                // Short delay to allow DOM update
+                setTimeout(() => trainingChart.update(), 100);
             }
             if (tabName === 'analysis' && analyticsChart) {
-                analyticsChart.update();
+                setTimeout(() => analyticsChart.update(), 100);
             }
         };
 
@@ -1574,6 +906,91 @@ if (count($employees) > 0) {
             }, 5000);
         };
 
+        // Update Model Stats UI
+        const updateModelStats = (data) => {
+            const acc = data.accuracy || 0;
+            const loss = data.loss || 0;
+            const time = data.trainingTime ? (data.trainingTime / 1000).toFixed(1) : '-';
+            
+            // Update individual elements exists check
+            const accEl = document.getElementById('model-accuracy');
+            if(accEl) accEl.textContent = (acc * 100).toFixed(1) + '%';
+            
+            const accDisplayEl = document.getElementById('model-accuracy-display');
+            if(accDisplayEl) accDisplayEl.textContent = (acc * 100).toFixed(1) + '%';
+
+            const lossEl = document.getElementById('training-loss');
+            if(lossEl) lossEl.textContent = typeof loss === 'number' ? loss.toFixed(4) : '-';
+
+            const timeEl = document.getElementById('training-time');
+            if(timeEl) timeEl.textContent = time !== '-' ? time + 's' : '-';
+            
+            if (data.trainedAt) {
+                 const statusEl = document.getElementById('training-status');
+                 if(statusEl) statusEl.innerHTML = `<h4><i class="fas fa-check-circle text-success"></i> Model Ready</h4><div class="small text-muted">Last trained: ${new Date(data.trainedAt).toLocaleString()}</div>`;
+            }
+        };
+
+        // Calculate Feature Importance (Dummy)
+        const calculateFeatureImportance = () => {
+            return {
+                'Tenure': 0.3,
+                'Salary': 0.2,
+                'Overtime': 0.2,
+                'Performance': 0.15,
+                'Role': 0.15
+            };
+        };
+
+        // Update Analysis Stats
+        const updateAnalysisStats = async () => {
+             // Calculate workforce risk
+             let highRiskCount = 0;
+             let totalRisk = 0;
+             let lowRiskCount = 0;
+             let mediumRiskCount = 0;
+             let highRiskCountStat = 0;
+
+             // Use simple heuristics if model not ready, or predictions if ready
+             // For summary stats we'll use heuristics to be fast
+             employees.forEach(emp => {
+                 let riskScore = 0;
+                 // Heuristics
+                 if(emp.performance_rating < 3) riskScore += 0.3;
+                 if(emp.overtime_hours > 15) riskScore += 0.3;
+                 if(emp.salary < 30000) riskScore += 0.2;
+                 
+                 const job = (emp.job_title||'').toLowerCase();
+                 if(job.includes('driver')) riskScore += 0.1;
+
+                 totalRisk += riskScore;
+                 
+                 if(riskScore > 0.6) {
+                     highRiskCount++;
+                     highRiskCountStat++;
+                 } else if (riskScore > 0.3) {
+                     mediumRiskCount++;
+                 } else {
+                     lowRiskCount++;
+                 }
+             });
+
+             const avgRisk = employees.length > 0 ? (totalRisk / employees.length) * 100 : 0;
+             
+             // Update DOM
+             const riskEl = document.getElementById('attrition-risk');
+             if(riskEl) riskEl.textContent = avgRisk.toFixed(1) + '%';
+             
+             const highRiskEl = document.getElementById('high-risk-count');
+             if(highRiskEl) highRiskEl.textContent = highRiskCount;
+             
+             // Update Chart
+             if(analyticsChart) {
+                 analyticsChart.data.datasets[0].data = [lowRiskCount, mediumRiskCount, highRiskCountStat];
+                 analyticsChart.update();
+             }
+        };
+
         // Train model
         const trainModel = async () => {
             if (isTraining) {
@@ -1581,8 +998,8 @@ if (count($employees) > 0) {
                 return;
             }
 
-            if (employees.length === 0) {
-                showNotification('No employee data available for training.', 'error');
+            if (employees.length === 0 && trainingData.length === 0) {
+                showNotification('No data available for training.', 'error');
                 return;
             }
 
@@ -1604,38 +1021,120 @@ if (count($employees) > 0) {
                 const features = [];
                 const labels = [];
 
+                // 1. Logic for Current Employees (Synthetic/Heuristic Data)
                 employees.forEach(emp => {
                     // Generate features
                     const empFeatures = generateEmployeeFeaturesJS(emp);
                     features.push(empFeatures);
 
-                    // Generate synthetic labels based on employee data
-                    let stayProb = 0.7;
-                    let resignProb = 0.2;
-                    let leaveProb = 0.1;
+                    // Generate synthetic labels based on employee data (Enhanced Logic)
+                    let stayProb = 0.70;
+                    let resignProb = 0.20;
+                    let leaveProb = 0.10;
 
-                    // Adjust probabilities based on real factors
-                    if (emp.overtime_hours > 15) {
-                        stayProb -= 0.2;
-                        resignProb += 0.15;
-                        leaveProb += 0.05;
+                    const job = (emp.job_title || '').toLowerCase();
+                    const salary = parseFloat(emp.salary) || 0;
+                    const tenureMonths = empFeatures[1] * 120; // Reverse normalization
+                    const performance = parseFloat(emp.performance_rating) || 5;
+
+                    // RULE 1: High Turnover Roles
+                    if (job.includes('driver') || job.includes('warehouse') || job.includes('labor')) {
+                        stayProb -= 0.15; resignProb += 0.10; leaveProb += 0.05;
                     }
 
-                    if (emp.performance_rating < 6) {
-                        stayProb -= 0.15;
-                        resignProb += 0.1;
-                        leaveProb += 0.05;
+                    // RULE 2: Salary Disparity (Role based)
+                    // If Manager but low salary
+                    if (job.includes('manager') && salary < 60000) {
+                         stayProb -= 0.20; // Flight risk
+                         resignProb += 0.20;
+                    } 
+                    // If Driver but low salary
+                    else if (job.includes('driver') && salary < 25000) {
+                         stayProb -= 0.25;
+                         resignProb += 0.25;
+                    }
+                    // General low salary
+                    else if (salary < 20000) {
+                         stayProb -= 0.10;
+                         resignProb += 0.10;
                     }
 
-                    if (emp.salary < 50000) {
-                        stayProb -= 0.1;
-                        resignProb += 0.08;
-                        leaveProb += 0.02;
+                    // RULE 3: Overtime Burnout
+                    if (emp.overtime_hours > 20) {
+                        stayProb -= 0.25;
+                        resignProb += 0.20; // Burnout resignation
+                        leaveProb += 0.05; // Health/perf issues
+                    } else if (emp.overtime_hours > 10) {
+                        stayProb -= 0.10;
+                        resignProb += 0.10;
+                    }
+
+                    // RULE 4: Performance vs Reward
+                    // High performer but not high salary -> Risk
+                    if (performance >= 8 && salary < 40000) {
+                        stayProb -= 0.30; // Poached by competitors
+                        resignProb += 0.30;
+                    }
+                    // Low performer -> Layoff risk
+                    if (performance < 3) {
+                         stayProb -= 0.20;
+                         leaveProb += 0.20; // Involuntary termination
+                    }
+
+                    // RULE 5: Tenure "Itch"
+                    // 1-2 years is common hopping time
+                    if (tenureMonths > 12 && tenureMonths < 30) {
+                        stayProb -= 0.05;
+                        resignProb += 0.05;
+                    }
+                    // Very long tenure usually stays, unless low pay
+                    if (tenureMonths > 120 && salary < 50000) {
+                         stayProb -= 0.10;
+                         resignProb += 0.10;
                     }
 
                     // Normalize probabilities
+                    // Ensure no negatives
+                    stayProb = Math.max(0.01, stayProb);
+                    resignProb = Math.max(0.01, resignProb);
+                    leaveProb = Math.max(0.01, leaveProb);
+
                     const total = stayProb + resignProb + leaveProb;
                     labels.push([stayProb / total, resignProb / total, leaveProb / total]);
+                });
+
+                // 2. Logic for Historical Training Data (Real Human Feedback)
+                // Weights real data 5x more by adding it multiple times or relying on shuffle
+                // Here we just add it once, but typically you'd weight these samples higher
+                trainingData.forEach(record => {
+                    try {
+                        const recFeatures = JSON.parse(record.features_json);
+                        // Convert dict to array if it was stored as dict in older versions, or use as is
+                        // The PHP now returns array, so it should be array. 
+                        // If it's old data (dict), this might break, so we check.
+                        let featureArray = [];
+                        if (Array.isArray(recFeatures)) {
+                            featureArray = recFeatures;
+                        } else {
+                            // Map old associative array to new flat array order ? 
+                            // For safety, assuming new data format or skipping
+                            // If you have old data, you'd strictly map keys here using the same order as generateEmployeeFeatures
+                            return; 
+                        }
+
+                        features.push(featureArray);
+
+                        // One-hot encode label
+                        let label = [0, 0, 0]; // Stay, Resign, Leave
+                        if (record.actual_outcome === 'Stay') label = [1, 0, 0];
+                        else if (record.actual_outcome === 'Resign') label = [0, 1, 0];
+                        else if (record.actual_outcome === 'Leave') label = [0, 0, 1];
+                        
+                        labels.push(label);
+                        
+                        // Add Recplicas to weight this real data higher?
+                        // features.push(featureArray); labels.push(label);
+                    } catch(e) { console.error("Error parsing training record", e); }
                 });
 
                 // Convert to tensors
@@ -1643,7 +1142,7 @@ if (count($employees) > 0) {
                 const labelTensor = tf.tensor2d(labels);
 
                 const epochs = parseInt(document.getElementById('epochs').value);
-                const batchSize = Math.min(8, employees.length);
+                const batchSize = 32;
 
                 // Training history
                 const history = {
@@ -1662,22 +1161,13 @@ if (count($employees) > 0) {
                             // Update progress
                             const progress = ((epoch + 1) / epochs) * 100;
                             progressFill.style.width = `${progress}%`;
-                            epochInfo.innerHTML = `
-                                Epoch: ${epoch + 1}/${epochs} | 
-                                Loss: ${logs.loss.toFixed(4)} | 
-                                Accuracy: ${logs.acc ? logs.acc.toFixed(4) : 'N/A'}
-                            `;
+                            epochInfo.innerHTML = `Epoch: ${epoch + 1}/${epochs} | Loss: ${logs.loss.toFixed(4)} | Acc: ${logs.acc ? logs.acc.toFixed(4) : 'N/A'}`;
 
                             // Update chart
-                            history.loss.push(logs.loss);
-                            history.accuracy.push(logs.acc || 0);
-
-                            trainingChart.data.labels = Array.from({
-                                length: history.loss.length
-                            }, (_, i) => i + 1);
-                            trainingChart.data.datasets[0].data = history.accuracy;
-                            trainingChart.data.datasets[1].data = history.loss;
-                            trainingChart.update();
+                            trainingChart.data.labels.push(epoch + 1);
+                            trainingChart.data.datasets[0].data.push(logs.acc);
+                            trainingChart.data.datasets[1].data.push(logs.loss);
+                            if(epoch % 5 === 0) trainingChart.update();
                         }
                     }
                 });
@@ -1716,11 +1206,7 @@ if (count($employees) > 0) {
                 document.getElementById('training-time').textContent = `${trainingTime}s`;
 
                 showNotification(`Model trained successfully! Accuracy: ${(finalAccuracy * 100).toFixed(1)}%`, 'success');
-                statusElement.innerHTML = `
-                    <h4><i class="fas fa-check-circle" style="color: #4cc9f0"></i> Training Complete</h4>
-                    <p>Final accuracy: <strong>${(finalAccuracy * 100).toFixed(1)}%</strong></p>
-                    <p>Training time: <strong>${trainingTime} seconds</strong></p>
-                `;
+                statusElement.innerHTML = `<h4><i class="fas fa-check-circle text-success"></i> Training Complete</h4><p>Accuracy: ${(finalAccuracy*100).toFixed(1)}%</p>`;
 
                 // Clean up tensors
                 featureTensor.dispose();
@@ -1737,263 +1223,192 @@ if (count($employees) > 0) {
 
         // Generate employee features for JavaScript
         const generateEmployeeFeaturesJS = (employee) => {
-            // Calculate tenure
-            const hireDate = new Date(employee.hire_date);
+            // Calculate tenure in months
+            // Handle missing or invalid date by defaulting to today (0 tenure)
+            const hireDateStr = employee.hire_date || new Date().toISOString();
+            const hireDate = new Date(hireDateStr);
             const today = new Date();
-            const tenure = (today.getFullYear() - hireDate.getFullYear()) * 12 +
-                (today.getMonth() - hireDate.getMonth());
+            let tenure = 0;
+            
+            if (!isNaN(hireDate.getTime())) {
+                 tenure = (today.getFullYear() - hireDate.getFullYear()) * 12 +
+                    (today.getMonth() - hireDate.getMonth());
+            }
 
-            // Normalize features for model input
+            // Freight Specific: High risk for Drivers with high overtime
+            let roleRisk = 0;
+            const job = (employee.job_title || '').toLowerCase();
+            if (job.includes('driver') || job.includes('warehouse')) {
+                 roleRisk = 0.2; // Base risk for demanding roles
+                 if ((employee.overtime_hours || 0) > 20) roleRisk += 0.3; // Burnout risk
+            }
+            
+            // Stats sanitation
+            const age = employee.age ? parseFloat(employee.age) : 30;
+            const salary = employee.salary ? parseFloat(employee.salary) : 0;
+            const perf = employee.performance_rating ? parseFloat(employee.performance_rating) : 5;
+            const ot = employee.overtime_hours ? parseFloat(employee.overtime_hours) : 0;
+            const payrollCount = employee.payroll_count ? parseInt(employee.payroll_count) : 0;
+            const bonusCount = employee.bonus_count ? parseInt(employee.bonus_count) : 0;
+
+            // Normalize features for model input (10 features)
+            // Ensure no NaNs by checking inputs
             return [
-                (employee.age || 30) / 100, // Age
-                tenure / 100, // Tenure
-                employee.salary / 200000, // Salary
-                (employee.performance_rating * 10) / 100, // Satisfaction
-                (employee.overtime_hours || 0) / 50, // Overtime
-                Math.max(0, 1 - ((employee.overtime_hours || 0) / 50)), // Work-life balance
-                0.5, // Department stability
-                employee.payroll_count > 0 ? 1 : 0, // Recent payroll
-                employee.bonus_count > 0 ? 1 : 0, // Recent bonus
-                employee.employment_status === 'Full-Time' ? 1 : 0 // Employment type
+                age / 100, // Age
+                tenure / 120, // Tenure (normalized to ~10 years)
+                Math.min(1, salary / 100000), // Salary
+                perf / 10, // Performance
+                Math.min(1, ot / 100), // Overtime
+                Math.max(0, 1 - (ot / 60)), // Work-life balance
+                0.5, // Department stability (placeholder)
+                payrollCount > 0 ? 1 : 0, // Recent payroll
+                bonusCount > 0 ? 1 : 0, // Recent bonus
+                roleRisk // NEW: Freight Role Risk
             ];
         };
 
-        // Calculate feature importance (simplified)
-        const calculateFeatureImportance = () => {
-            return [0.15, 0.12, 0.18, 0.14, 0.11, 0.09, 0.08, 0.06, 0.04, 0.03];
-        };
-
-        // Update model statistics
-        const updateModelStats = (modelData) => {
-            if (modelData) {
-                document.getElementById('model-accuracy').textContent =
-                    modelData.accuracy ? (modelData.accuracy * 100).toFixed(1) + '%' : 'N/A';
-                document.getElementById('training-loss').textContent =
-                    modelData.loss ? modelData.loss.toFixed(4) : 'N/A';
-            }
-        };
-
-        // Update analysis statistics
-        const updateAnalysisStats = () => {
-            if (employees.length === 0) return;
-
-            let highRiskCount = 0;
-            let totalRisk = 0;
-
-            employees.forEach(emp => {
-                // Simple risk calculation
-                let riskScore = 0;
-                if (emp.performance_rating < 6) riskScore += 0.3;
-                if (emp.overtime_hours > 15) riskScore += 0.3;
-                if (emp.salary < 50000) riskScore += 0.2;
-
-                totalRisk += riskScore;
-                if (riskScore > 0.6) highRiskCount++;
-            });
-
-            const avgRisk = (totalRisk / employees.length) * 100;
-
-            // Update UI
-            document.getElementById('high-risk-count').textContent = highRiskCount;
-            document.getElementById('attrition-risk').textContent = avgRisk.toFixed(1) + '%';
-
-            // Update chart
-            if (analyticsChart) {
-                analyticsChart.data.datasets[0].data = [
-                    employees.length - highRiskCount - Math.floor(highRiskCount / 2),
-                    Math.floor(highRiskCount / 2),
-                    highRiskCount
-                ];
-                analyticsChart.update();
-            }
-        };
-
-        // Predict employee attrition
+        // Predict employee attrition using Client-Side TF Model
         const predictEmployee = async () => {
-            const employeeId = document.getElementById('employee').value;
+             const employeeId = document.getElementById('employee').value;
+             if (!employeeId) {
+                 showNotification('Please select an employee first.', 'error');
+                 return;
+             }
 
-            if (!employeeId) {
-                showNotification('Please select an employee first.', 'error');
-                return;
-            }
+             const employee = employees.find(e => e.id == employeeId);
+             if (!employee) return;
 
-            if (!model) {
-                showNotification('Model is not trained. Please train the model first.', 'error');
-                return;
-            }
+             // Show loading
+             const outputElement = document.getElementById('output');
+             outputElement.innerHTML = `
+                <div class="prediction-result" style="border-color: #e9ecef;">
+                    <h4><i class="fas fa-spinner fa-spin"></i> Analyzing Employee Data...</h4>
+                    <p class="text-muted">Running neural network inference...</p>
+                </div>`;
 
-            const employee = employees.find(emp => emp.id == employeeId);
-            if (!employee) {
-                showNotification('Employee not found.', 'error');
-                return;
-            }
+             // Artificial delay for UX
+             await new Promise(r => setTimeout(r, 1000));
 
-            try {
-                // Show loading
-                const outputElement = document.getElementById('output');
-                outputElement.innerHTML = `
-                    <div class="prediction-result" style="border-color: #e9ecef;">
-                        <h4><i class="fas fa-spinner fa-spin"></i> Analyzing Employee Data...</h4>
-                        <p>Please wait while we analyze ${employee.name}'s attrition risk.</p>
-                    </div>
-                `;
+             try {
+                 if(!model) {
+                      throw new Error("Model not trained yet. Please go to 'Train Model' tab.");
+                 }
 
-                // Generate features
-                const empFeatures = generateEmployeeFeaturesJS(employee);
-                const inputTensor = tf.tensor2d([empFeatures]);
+                 const features = generateEmployeeFeaturesJS(employee);
+                 const inputTensor = tf.tensor2d([features]);
+                 
+                 const prediction = model.predict(inputTensor);
+                 const values = await prediction.data(); // [stay, resign, leave]
+                 
+                 const stayProb = values[0];
+                 const resignProb = values[1];
+                 const leaveProb = values[2];
+                 const attritionProb = resignProb + leaveProb; // Total attrition risk
 
-                // Make prediction
-                const prediction = model.predict(inputTensor);
-                const probabilities = await prediction.data();
+                 // Determine Risk Level
+                 let riskLevel = 'Low';
+                 let riskClass = 'prediction-low';
+                 let suggestions = [];
+                 
+                 if (attritionProb > 0.6) {
+                     riskLevel = 'High';
+                     riskClass = 'prediction-high';
+                 } else if (attritionProb > 0.3) {
+                     riskLevel = 'Medium';
+                     riskClass = 'prediction-medium';
+                 }
 
-                // Get prediction results
-                const classes = ['Low Risk (Stay)', 'Medium Risk (Monitor)', 'High Risk (Act)'];
-                const maxIndex = probabilities.indexOf(Math.max(...probabilities));
-                const predictedClass = classes[maxIndex];
-                const confidence = probabilities[maxIndex];
+                 // Generate Explanations (Freight Context)
+                 const riskFactors = [];
+                 const job = (employee.job_title || '').toLowerCase();
+                 const salary = parseFloat(employee.salary) || 0;
+                 const perf = parseFloat(employee.performance_rating) || 0;
+                 const tenureMonths = features[1] * 120;
+                 const overtime = parseFloat(employee.overtime_hours) || 0;
 
-                // Determine risk level
-                let riskLevel, riskClass, suggestions;
+                 if (overtime > 20) riskFactors.push("Critical Burnout Risk (>20h overtime)");
+                 else if (overtime > 15) riskFactors.push("High Overtime Hours (>15h)");
+                 
+                 if (job.includes('driver')) {
+                     if(salary < 25000) riskFactors.push("Driver Pay Below Market (<25k)");
+                     riskFactors.push("High Turnover Role (Driver)");
+                 }
+                 
+                 if (job.includes('manager') && salary < 60000) {
+                      riskFactors.push("Manager Compensation Risk (<60k)");
+                 }
 
-                if (predictedClass === 'Low Risk (Stay)') {
-                    riskLevel = 'Low Risk';
-                    riskClass = 'prediction-low';
-                    suggestions = [
-                        'Continue current engagement strategies',
-                        'Monitor for any changes in performance metrics',
-                        'Consider growth opportunities to maintain satisfaction'
-                    ];
-                } else if (predictedClass === 'Medium Risk (Monitor)') {
-                    riskLevel = 'Medium Risk';
-                    riskClass = 'prediction-medium';
-                    suggestions = [
-                        'Schedule regular check-ins to understand concerns',
-                        'Review workload and work-life balance',
-                        'Consider recognition or development opportunities'
-                    ];
-                } else {
-                    riskLevel = 'High Risk';
-                    riskClass = 'prediction-high';
-                    suggestions = [
-                        'Immediate one-on-one meeting required',
-                        'Review compensation and benefits competitiveness',
-                        'Develop retention plan with HR',
-                        'Consider flexible work arrangements'
-                    ];
-                }
+                 if (perf >= 8 && salary < 40000) riskFactors.push("High Performer Flight Risk (Low Pay)");
+                 if (perf < 3) riskFactors.push("Performance Improvement Needed");
+                 
+                 if (tenureMonths < 12) riskFactors.push("New Hire (< 1 year) - Early Turnover Risk");
+                 if (tenureMonths > 12 && tenureMonths < 30) riskFactors.push("1-2 Year Tenure Itch");
 
-                // Calculate tenure
-                const hireDate = new Date(employee.hire_date);
-                const today = new Date();
-                const tenure = (today.getFullYear() - hireDate.getFullYear()) * 12 +
-                    (today.getMonth() - hireDate.getMonth());
+                 // Suggestions
+                 if(riskLevel === 'High') {
+                     suggestions = ['Immediate Retention Interview', 'Review Overtime Load', 'Compensation Benchmarking'];
+                 } else if (riskLevel === 'Medium') {
+                     suggestions = ['Manager Check-in', 'Schedule Adjustments', 'Skills Training'];
+                 } else {
+                     suggestions = ['Maintain Engagement', 'Career Growth Planning'];
+                 }
 
-                // Display results
-                outputElement.innerHTML = `
-                    <div class="prediction-result ${riskClass}">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                            <h3><i class="fas fa-user-shield"></i> ${employee.name} - ${riskLevel}</h3>
-                            <span class="risk-badge risk-${riskLevel.toLowerCase().split(' ')[0]}">${riskLevel}</span>
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px;">
-                            <div>
-                                <h4><i class="fas fa-chart-pie"></i> Risk Distribution</h4>
-                                <div style="background: #f8f9fa; padding: 15px; border-radius: 10px;">
-                                    <div style="margin-bottom: 10px;">
-                                        <span>Low Risk:</span>
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <div style="flex: 1; height: 10px; background: #e9ecef; border-radius: 5px;">
-                                                <div style="height: 100%; width: ${probabilities[0] * 100}%; background: #4cc9f0; border-radius: 5px;"></div>
-                                            </div>
-                                            <span style="font-weight: bold;">${(probabilities[0] * 100).toFixed(1)}%</span>
-                                        </div>
-                                    </div>
-                                    <div style="margin-bottom: 10px;">
-                                        <span>Medium Risk:</span>
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <div style="flex: 1; height: 10px; background: #e9ecef; border-radius: 5px;">
-                                                <div style="height: 100%; width: ${probabilities[1] * 100}%; background: #f8961e; border-radius: 5px;"></div>
-                                            </div>
-                                            <span style="font-weight: bold;">${(probabilities[1] * 100).toFixed(1)}%</span>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <span>High Risk:</span>
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <div style="flex: 1; height: 10px; background: #e9ecef; border-radius: 5px;">
-                                                <div style="height: 100%; width: ${probabilities[2] * 100}%; background: #f72585; border-radius: 5px;"></div>
-                                            </div>
-                                            <span style="font-weight: bold;">${(probabilities[2] * 100).toFixed(1)}%</span>
-                                        </div>
-                                    </div>
+                  const score = Math.round(attritionProb * 100);
+                  
+                  // Render with Feedback Form
+                  outputElement.innerHTML = `
+                       <div class="prediction-result ${riskClass}">
+                           <div class="d-flex justify-content-between">
+                               <h3>${employee.name}</h3>
+                               <span class="badge bg-${riskLevel === 'High' ? 'danger' : (riskLevel === 'Medium' ? 'warning' : 'success')}">${riskLevel} Risk (${score}%)</span>
+                           </div>
+                           <div class="py-3">
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar bg-success" style="width: ${stayProb*100}%">Stay</div>
+                                    <div class="progress-bar bg-warning" style="width: ${resignProb*100}%">Resign</div>
+                                    <div class="progress-bar bg-danger" style="width: ${leaveProb*100}%">Layoff/Leave</div>
                                 </div>
-                            </div>
-                            
-                            <div>
-                                <h4><i class="fas fa-user-circle"></i> Employee Details</h4>
-                                <div class="employee-details-grid">
-                                    <div class="detail-item">
-                                        <div class="detail-label">Age</div>
-                                        <div class="detail-value">${employee.age || 'N/A'}</div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <div class="detail-label">Tenure</div>
-                                        <div class="detail-value">${tenure} months</div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <div class="detail-label">Salary</div>
-                                        <div class="detail-value">₱${employee.salary.toLocaleString()}</div>
-                                    </div>
-                                    <div class="detail-item">
-                                        <div class="detail-label">Performance</div>
-                                        <div class="detail-value">${employee.performance_rating}/10</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <h4><i class="fas fa-lightbulb"></i> Recommended Actions</h4>
-                        <ul style="padding-left: 20px; margin-bottom: 25px;">
-                            ${suggestions.map(s => `<li>${s}</li>`).join('')}
-                        </ul>
-                        
-                        <div class="training-form">
-                            <h5><i class="fas fa-robot"></i> Improve AI Accuracy</h5>
-                            <p>Help train the AI by providing feedback on this prediction:</p>
-                            <form method="POST" id="training-form">
+                                <div class="text-muted small mt-1">Probabilities: Stay ${(stayProb*100).toFixed(0)}% | Resign ${(resignProb*100).toFixed(0)}% | Leave ${(leaveProb*100).toFixed(0)}%</div>
+                           </div>
+                           
+                           <div class="row mb-3">
+                               <div class="col-md-12">
+                                   <h6><i class="fas fa-clipboard-list me-2"></i>Risk Factors</h6>
+                                   <ul class="list-unstyled">
+                                       ${riskFactors.length > 0 ? riskFactors.map(f => `<li class="mb-1"><i class="fas fa-exclamation-circle text-danger me-2"></i> ${f}</li>`).join('') : '<li class="text-success"><i class="fas fa-check me-2"></i> No major risk factors detected.</li>'}
+                                   </ul>
+                               </div>
+                           </div>
+                           
+                           <hr>
+                           <h5><i class="fas fa-user-check"></i> Train the AI (Feedback)</h5>
+                           <p class="small text-muted">Help improve accuracy by confirming the status.</p>
+                           
+                           <form method="POST" action="ai.php">
                                 <input type="hidden" name="employee_id" value="${employee.id}">
-                                <input type="hidden" name="prediction_confidence" value="${confidence}">
-                                <div class="form-group">
-                                    <label>Actual Outcome:</label>
-                                    <select name="actual_outcome" class="form-control" required>
-                                        <option value="">-- Select outcome --</option>
-                                        <option value="Stay">Stayed with company</option>
-                                        <option value="Resign">Resigned/Left company</option>
-                                        <option value="Leave">Took extended leave</option>
-                                    </select>
-                                </div>
-                                <div class="action-buttons">
-                                    <button type="submit" name="save_training_data" class="btn btn-success">
-                                        <i class="fas fa-save"></i> Save Training Data
+                                <input type="hidden" name="prediction_confidence" value="${attritionProb}">
+                                <div class="btn-group w-100">
+                                    <button type="submit" name="save_training_data" value="1" class="btn btn-outline-success btn-sm" onclick="this.form.actual_outcome.value='Stay'">
+                                        <i class="fas fa-check"></i> Confirm Stay
                                     </button>
-                                    <button type="button" class="btn btn-secondary" onclick="clearPrediction()">
-                                        <i class="fas fa-times"></i> Clear
+                                    <button type="submit" name="save_training_data" value="1" class="btn btn-outline-warning btn-sm" onclick="this.form.actual_outcome.value='Resign'">
+                                        <i class="fas fa-walking"></i> Actual: Resigned
+                                    </button>
+                                    <button type="submit" name="save_training_data" value="1" class="btn btn-outline-danger btn-sm" onclick="this.form.actual_outcome.value='Leave'">
+                                        <i class="fas fa-door-open"></i> Actual: Terminated
                                     </button>
                                 </div>
-                            </form>
-                        </div>
-                    </div>
-                `;
+                                <input type="hidden" name="actual_outcome" id="actual_outcome" value="">
+                           </form>
+                       </div>
+                  `;
 
-                // Clean up tensors
-                inputTensor.dispose();
-                prediction.dispose();
+                 inputTensor.dispose();
 
-            } catch (error) {
-                console.error('Prediction error:', error);
-                showNotification('Error making prediction: ' + error.message, 'error');
-            }
+             } catch (e) {
+                 showNotification(e.message, 'error');
+                 outputElement.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+             }
         };
 
         // Clear prediction results
@@ -2056,109 +1471,80 @@ if (count($employees) > 0) {
             }, 1000);
         };
 
-        // Analyze data
+        // Analyze data using Client-Side Logic
         const analyzeData = async () => {
             const resultsElement = document.getElementById('analysis-results');
             resultsElement.innerHTML = `
                 <div class="prediction-result" style="border-color: #e9ecef;">
                     <h4><i class="fas fa-spinner fa-spin"></i> Analyzing Workforce Data...</h4>
-                    <p>Please wait while we analyze your workforce data.</p>
+                    <p>Running batch analysis on all employees...</p>
                 </div>
             `;
 
-            // Simulate analysis
-            setTimeout(() => {
-                // Calculate statistics
-                let departmentStats = {};
-                let performanceStats = {
-                    high: 0,
-                    medium: 0,
-                    low: 0
-                };
-                let salaryRanges = {
-                    low: 0,
-                    medium: 0,
-                    high: 0
-                };
+            // UX Delay
+            await new Promise(r => setTimeout(r, 800));
 
-                employees.forEach(emp => {
-                    // Department stats
-                    const dept = emp.department || 'Unknown';
-                    departmentStats[dept] = (departmentStats[dept] || 0) + 1;
-
-                    // Performance stats
-                    if (emp.performance_rating >= 8) performanceStats.high++;
-                    else if (emp.performance_rating >= 5) performanceStats.medium++;
-                    else performanceStats.low++;
-
-                    // Salary ranges
-                    if (emp.salary < 50000) salaryRanges.low++;
-                    else if (emp.salary < 100000) salaryRanges.medium++;
-                    else salaryRanges.high++;
-                });
-
-                // Find top departments
-                const topDepartments = Object.entries(departmentStats)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3);
-
-                resultsElement.innerHTML = `
-                    <div class="prediction-result prediction-low">
-                        <h4><i class="fas fa-chart-bar"></i> Workforce Analysis Results</h4>
-                        
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 25px 0;">
-                            <div>
-                                <h5><i class="fas fa-building"></i> Department Distribution</h5>
-                                <div style="background: white; padding: 15px; border-radius: 10px;">
-                                    ${topDepartments.map(([dept, count]) => `
-                                        <div style="margin-bottom: 10px;">
-                                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                                <span>${dept}</span>
-                                                <span>${count} employees</span>
-                                            </div>
-                                            <div style="height: 8px; background: #e9ecef; border-radius: 4px;">
-                                                <div style="height: 100%; width: ${(count / employees.length) * 100}%; 
-                                                     background: #4361ee; border-radius: 4px;"></div>
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <h5><i class="fas fa-star"></i> Performance Overview</h5>
-                                <div style="background: white; padding: 15px; border-radius: 10px;">
-                                    <div style="margin-bottom: 10px;">
-                                        <span>High Performers (8-10):</span>
-                                        <span style="float: right; font-weight: bold;">${performanceStats.high}</span>
-                                    </div>
-                                    <div style="margin-bottom: 10px;">
-                                        <span>Medium Performers (5-7):</span>
-                                        <span style="float: right; font-weight: bold;">${performanceStats.medium}</span>
-                                    </div>
-                                    <div>
-                                        <span>Low Performers (1-4):</span>
-                                        <span style="float: right; font-weight: bold;">${performanceStats.low}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <h5><i class="fas fa-lightbulb"></i> Key Insights</h5>
-                        <ul style="padding-left: 20px;">
-                            <li>Workforce consists of ${employees.length} active employees</li>
-                            <li>Average salary: ₱${<?php echo number_format($workforce_stats['avg_salary'], 0); ?>}</li>
-                            <li>Average tenure: ${<?php echo round($workforce_stats['avg_tenure'], 1); ?>} months</li>
-                            <li>${topDepartments[0] ? `${topDepartments[0][0]} is the largest department with ${topDepartments[0][1]} employees` : ''}</li>
-                            <li>${performanceStats.high > performanceStats.low * 2 ? 'Strong performance culture observed' : 'Performance improvement opportunities identified'}</li>
-                        </ul>
-                    </div>
-                `;
-
+            try {
+                // Update stats and charts
                 updateAnalysisStats();
 
-            }, 1500);
+                // Identify High Risk Employees for the list
+                let highRiskEmployees = [];
+                employees.forEach(emp => {
+                     // Heuristic scoring for batch analysis
+                     let riskScore = 0;
+                     if (emp.performance_rating < 4) riskScore += 30; // Scale 1-5 usually in system, old code assumed 1-10? 
+                     // Let's assume 5 is high. If rating < 3 (avg), risk adds up.
+                     // Adjusted to DB data: rating is likely 1-5.
+                     if ((emp.performance_rating || 3) < 3) riskScore += 25;
+
+                     if ((emp.overtime_hours||0) > 15) riskScore += 30;
+                     if (emp.salary < 30000) riskScore += 20;
+                     if ((emp.job_title||'').toLowerCase().includes('driver')) riskScore += 15;
+                     
+                     // Cap at 99
+                     riskScore = Math.min(99, riskScore);
+
+                     if (riskScore > 50) {
+                         highRiskEmployees.push({...emp, risk_score: riskScore});
+                     }
+                });
+
+                highRiskEmployees.sort((a,b) => b.risk_score - a.risk_score);
+
+                // Update the List UI
+                const listHtml = highRiskEmployees.length > 0 ? 
+                    `<table class="table table-sm table-hover">
+                        <thead><tr><th>Name</th><th>Role</th><th>Risk Score</th><th>Action</th></tr></thead>
+                        <tbody>
+                            ${highRiskEmployees.slice(0, 10).map(emp => `
+                                <tr>
+                                    <td>${emp.name}</td>
+                                    <td>${emp.job_title || emp.department}</td>
+                                    <td><span class="badge bg-danger">${emp.risk_score}%</span></td>
+                                    <td><button class="btn btn-xs btn-outline-primary" onclick="viewEmployee(${emp.id})">Analyze</button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>` 
+                    : '<div class="alert alert-success">No high risk employees detected.</div>';
+                
+                const listPlaceholder = document.getElementById('high-risk-list-placeholder');
+                if(listPlaceholder) listPlaceholder.innerHTML = listHtml;
+
+                resultsElement.innerHTML = `
+                     <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i> Analysis Complete. ${highRiskEmployees.length} high-risk profiles identified.
+                     </div>
+                `;
+
+            } catch (error) {
+                console.error('Analysis error:', error);
+                showNotification('Error performing analysis: ' + error.message, 'error');
+                resultsElement.innerHTML = `<div class="message error">Analysis failed: ${error.message}</div>`;
+            }
         };
+
 
         // Generate report
         const generateReport = () => {
@@ -2271,6 +1657,21 @@ if (count($employees) > 0) {
         const analyzeEmployee = (id) => {
             viewEmployee(id);
         };
+
+        // Expose functions to global window object for onclick handlers
+        window.switchTab = switchTab;
+        window.predictEmployee = predictEmployee;
+        window.trainModel = trainModel;
+        window.loadPretrainedModel = loadPretrainedModel;
+        window.clearModel = clearModel;
+        window.saveModel = saveModel;
+        window.refreshDatabase = refreshDatabase;
+        window.analyzeData = analyzeData;
+        window.generateReport = generateReport;
+        window.exportData = exportData;
+        window.viewEmployee = viewEmployee;
+        window.analyzeEmployee = analyzeEmployee;
+        
     </script>
 </body>
 

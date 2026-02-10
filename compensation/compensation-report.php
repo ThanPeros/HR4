@@ -1,728 +1,540 @@
 <?php
-// compensation_report.php - Complete Compensation Planning Report
-ob_start();
+// compensation/compensation-report.php
 session_start();
-include '../includes/sidebar.php';
-// Include database configuration
 require_once '../config/db.php';
+require_once '../includes/sidebar.php';
 
-// ================= FETCH DATA FUNCTIONS =================
+// Initialize Theme
+$currentTheme = $_SESSION['theme'] ?? 'light';
 
-function getCompensationSummary($pdo)
-{
-    // Basic Payroll Stats
-    $sql = "SELECT 
-            COUNT(*) as total_employees,
-            SUM(basic_salary) as total_monthly_basic,
-            AVG(basic_salary) as avg_basic,
-            SUM(basic_salary) * 13 as est_annual_cost -- Assuming 13th month
-            FROM employees 
-            WHERE status = 'Active'";
+// Helper for total cost formatting
+function formatMoney($amount) {
+    return '₱' . number_format((float)$amount, 2);
+}
 
-    try {
-        $stmt = $pdo->query($sql);
-        $basics = $stmt->fetch(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        error_log("Error fetching basic stats: " . $e->getMessage());
-        $basics = ['total_employees' => 0, 'total_monthly_basic' => 0, 'avg_basic' => 0, 'est_annual_cost' => 0];
-    }
+// -------------------------------------------------------------------------
+// 1. DATA AGGREGATION
+// -------------------------------------------------------------------------
 
-    // Allowances Estimation
-    $allowanceTotal = 0;
-    try {
-        $sqlAllowances = "SELECT 
-                            (CASE WHEN am.amount_type = 'Percentage' 
-                                THEN (SELECT AVG(basic_salary) FROM employees WHERE status = 'Active') * (am.amount/100)
-                                ELSE am.amount END) as allowance_amount
-                          FROM allowance_matrix am
-                          WHERE am.status = 'Active' 
-                          AND am.allowance_type IN ('Transportation', 'Meal', 'Communication', 'Housing', 'Position', 'Other')";
+// A. Employees & Base Salaries
+try {
+    $employees = $pdo->query("SELECT id, name, job_title, department, salary FROM employees WHERE status = 'Active' ORDER BY name ASC")->fetchAll();
+} catch (Exception $e) {
+    $employees = [];
+}
 
-        $stmtAlloc = $pdo->query($sqlAllowances);
-        while ($row = $stmtAlloc->fetch(PDO::FETCH_ASSOC)) {
-            $allowanceTotal += $row['allowance_amount'];
-        }
-    } catch (PDOException $e) {
-        error_log("Error fetching allowances: " . $e->getMessage());
-    }
+// B. Active Benefits Cost (Employer Share)
+// Group by employee name
+$benefitsData = [];
+try {
+    $stmt = $pdo->query("
+        SELECT eb.employee_name, 
+               SUM(CASE 
+                   WHEN bt.frequency = 'Monthly' THEN bt.employer_share * 12 
+                   WHEN bt.frequency = 'Annual' THEN bt.employer_share 
+                   ELSE 0 
+               END) as annual_benefit_cost
+        FROM employee_benefits eb
+        JOIN benefit_types bt ON eb.benefit_id = bt.id
+        WHERE eb.status = 'Active'
+        GROUP BY eb.employee_name
+    ");
+    $benefitsData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) { /* Table might not exist yet */ }
 
-    return [
-        'headcount' => $basics['total_employees'] ?? 0,
-        'monthly_basic' => $basics['total_monthly_basic'] ?? 0,
-        'monthly_allowances' => $allowanceTotal,
-        'monthly_total' => ($basics['total_monthly_basic'] ?? 0) + $allowanceTotal,
-        'annual_total' => (($basics['total_monthly_basic'] ?? 0) + $allowanceTotal) * 12 + ($basics['total_monthly_basic'] ?? 0)
+// C. Active Allowances Cost
+$allowancesData = [];
+try {
+    $stmt = $pdo->query("
+        SELECT ea.employee_name, 
+               SUM(at.amount * 12) as annual_allowance_cost 
+        FROM employee_allowances ea
+        JOIN allowance_types at ON ea.allowance_id = at.id
+        WHERE ea.status = 'Active' AND at.type = 'Fixed' -- Only fixed monthly allowances are projected annually reliably
+        GROUP BY ea.employee_name
+    ");
+    $allowancesData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) { /* Table might not exist */ }
+
+// D. Incentives (Received YTD - or simply all recorded for this report snapshot)
+// We'll sum all granted incentives as "Variable Pay Distributed"
+$incentivesData = [];
+try {
+    $stmt = $pdo->query("
+        SELECT employee_name, SUM(amount) as total_incentives 
+        FROM employee_incentives 
+        GROUP BY employee_name
+    ");
+    $incentivesData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+} catch (Exception $e) { /* Table might not exist */ }
+
+// E. Recent Salary Adjustments (Audit)
+$recentAdjustments = [];
+try {
+    // Check if table v2 exists
+    $tableExists = $pdo->query("SHOW TABLES LIKE 'salary_adjustments_v2'")->rowCount() > 0;
+    $adjTable = $tableExists ? 'salary_adjustments_v2' : 'salary_adjustments';
+    
+    $stmt = $pdo->query("
+        SELECT sa.*, at.type_name 
+        FROM $adjTable sa
+        LEFT JOIN adjustment_types at ON sa.adjustment_type_id = at.id
+        WHERE sa.status = 'Approved'
+        ORDER BY sa.effective_date DESC LIMIT 10
+    ");
+    $recentAdjustments = $stmt->fetchAll();
+} catch (Exception $e) { /* Ignore */ }
+
+// -------------------------------------------------------------------------
+// 2. CONSOLIDATE DATA FOR REPORT
+// -------------------------------------------------------------------------
+$reportData = [];
+$totals = [
+    'salary' => 0,
+    'benefits' => 0,
+    'allowances' => 0,
+    'incentives' => 0,
+    'grand_total' => 0
+];
+
+// Department Summary aggregation
+$deptSummary = [];
+
+foreach ($employees as $emp) {
+    $name = $emp['name'];
+    $dept = $emp['department'] ?: 'Unassigned';
+    $annualSalary = ($emp['salary'] ?? 0) * 12; // Projecting Annual logic
+    $ben = $benefitsData[$name] ?? 0;
+    $all = $allowancesData[$name] ?? 0;
+    $inc = $incentivesData[$name] ?? 0;
+    
+    $totalComp = $annualSalary + $ben + $all + $inc;
+    
+    // Detailed Data
+    $reportData[] = [
+        'name' => $name,
+        'role' => $emp['job_title'],
+        'dept' => $dept,
+        'annual_salary' => $annualSalary,
+        'annual_benefits' => $ben,
+        'annual_allowances' => $all,
+        'total_incentives' => $inc,
+        'total_comp' => $totalComp
     ];
-}
+    
+    // Global Totals
+    $totals['salary'] += $annualSalary;
+    $totals['benefits'] += $ben;
+    $totals['allowances'] += $all;
+    $totals['incentives'] += $inc;
+    $totals['grand_total'] += $totalComp;
 
-function getDetailedRegister($pdo)
-{
-    $sql = "SELECT 
-                e.id, e.name, e.department, e.job_title, e.employment_status, e.basic_salary,
-                (
-                    SELECT COALESCE(SUM(
-                        CASE WHEN am.amount_type = 'Percentage' 
-                            THEN e.basic_salary * (am.amount/100)
-                            ELSE am.amount END
-                    ), 0)
-                    FROM allowance_matrix am
-                    WHERE (am.department = 'All' OR am.department = e.department)
-                    AND (am.employment_type = 'All' OR am.employment_type = e.employment_status)
-                    AND am.status = 'Active'
-                ) as total_allowances
-            FROM employees e
-            WHERE e.status = 'Active'
-            ORDER BY e.department, e.name";
-
-    try {
-        return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        error_log("Error fetching detailed register: " . $e->getMessage());
-        return [];
+    // Department Totals
+    if (!isset($deptSummary[$dept])) {
+        $deptSummary[$dept] = [
+            'headcount' => 0,
+            'salary' => 0,
+            'benefits_allowances' => 0,
+            'variable' => 0,
+            'total' => 0
+        ];
     }
+    $deptSummary[$dept]['headcount']++;
+    $deptSummary[$dept]['salary'] += $annualSalary;
+    $deptSummary[$dept]['benefits_allowances'] += ($ben + $all);
+    $deptSummary[$dept]['variable'] += $inc;
+    $deptSummary[$dept]['total'] += $totalComp;
 }
-
-function getGradeDistribution($pdo)
-{
-    // Define salary grades based on your data structure
-    $salaryGrades = [
-        ['grade_level' => 'SG-1', 'grade_name' => 'Entry Level', 'min_salary' => 15000, 'max_salary' => 22000],
-        ['grade_level' => 'SG-2', 'grade_name' => 'Junior Associate', 'min_salary' => 18000, 'max_salary' => 27000],
-        ['grade_level' => 'SG-3', 'grade_name' => 'Associate', 'min_salary' => 22000, 'max_salary' => 35000],
-        ['grade_level' => 'SG-4', 'grade_name' => 'Senior Associate', 'min_salary' => 28000, 'max_salary' => 45000],
-        ['grade_level' => 'SG-5', 'grade_name' => 'Team Lead', 'min_salary' => 35000, 'max_salary' => 60000],
-        ['grade_level' => 'SG-6', 'grade_name' => 'Manager', 'min_salary' => 45000, 'max_salary' => 80000],
-        ['grade_level' => 'SG-7', 'grade_name' => 'Senior Manager', 'min_salary' => 60000, 'max_salary' => 100000],
-        ['grade_level' => 'SG-8', 'grade_name' => 'Director', 'min_salary' => 80000, 'max_salary' => 130000],
-    ];
-
-    $results = [];
-
-    try {
-        foreach ($salaryGrades as $grade) {
-            $sql = "SELECT 
-                        COUNT(*) as employee_count,
-                        AVG(basic_salary) as avg_actual_salary
-                    FROM employees 
-                    WHERE status = 'Active' 
-                    AND basic_salary BETWEEN :min_salary AND :max_salary";
-
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                ':min_salary' => $grade['min_salary'],
-                ':max_salary' => $grade['max_salary']
-            ]);
-
-            $data = $stmt->fetch(PDO::FETCH_ASSOC);
-
-            $results[] = [
-                'grade_level' => $grade['grade_level'],
-                'grade_name' => $grade['grade_name'],
-                'min_salary' => $grade['min_salary'],
-                'max_salary' => $grade['max_salary'],
-                'employee_count' => $data['employee_count'] ?? 0,
-                'avg_actual_salary' => $data['avg_actual_salary'] ?? 0
-            ];
-        }
-    } catch (PDOException $e) {
-        error_log("Error fetching grade distribution: " . $e->getMessage());
-    }
-
-    return $results;
-}
-
-// Fetch data for display
-$summary = getCompensationSummary($pdo);
-$details = getDetailedRegister($pdo);
-$grades = getGradeDistribution($pdo);
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compensation Planning Report</title>
+    <title>Compensation Analysis Report | HR 4</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Additional styles for centering */
-        body.compensation-report {
+        :root {
+            --primary-color: #4e73df;
+            --secondary-color: #f8f9fc;
+            --dark-bg: #2c3e50;
+            --dark-card: #34495e;
+            --text-dark: #212529;
+            --text-light: #f8f9fa;
+        }
+        
+        body {
             font-family: 'Segoe UI', system-ui, sans-serif;
-            background-color: #f8f9fc;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+            background-color: var(--secondary-color);
+            color: var(--text-dark);
+        }
+        
+        body.dark-mode {
+            background-color: var(--dark-bg);
+            color: var(--text-light);
+            --secondary-color: #2c3e50;
         }
 
-        .page-wrapper {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            padding: 80px 20px 40px;
-            /* Added top padding for header space */
-            width: 100%;
-        }
-
-        /* Main Container - Centered and Responsive */
-        .container-fluid {
-            width: 100%;
-            max-width: 1400px;
-            /* Increased max-width for better readability */
-            margin: 0 auto;
-            padding: 0 20px;
-            box-sizing: border-box;
-        }
-
-        /* Report Header - Centered and Clean */
-        .report-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .main-content { padding: 2rem; margin-top: 60px; }
+        
+        .card-custom {
             background: white;
-            padding: 25px 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            margin-bottom: 30px;
-            border-left: 5px solid #4e73df;
-            flex-wrap: wrap;
-            gap: 15px;
+            border-radius: 0.35rem;
+            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+            margin-bottom: 1.5rem;
         }
-
-        .report-header>div:first-child {
-            flex: 1;
-            min-width: 300px;
-        }
-
-        .report-header>div:last-child {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .report-header h1 {
-            margin: 0;
-            color: #2c3e50;
-            font-size: 1.8rem;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .report-header p {
-            margin: 8px 0 0;
-            color: #6c757d;
-            font-size: 1rem;
-            line-height: 1.5;
-        }
-
-        /* Stats Grid - Centered Cards */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 25px;
-            margin-bottom: 40px;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border-left: 5px solid #4e73df;
-            text-align: center;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-        }
-
-        .stat-card h3 {
-            margin: 0 0 12px 0;
-            color: #5a5c69;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
-        }
-
-        .stat-card .value {
-            font-size: 1.8rem;
-            font-weight: 800;
-            color: #2e343a;
-            line-height: 1.2;
-        }
-
-        /* Report Sections - Centered Content */
-        .report-section {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            margin-bottom: 35px;
-            overflow: hidden;
-        }
-
-        .report-section .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f1f1f1;
-        }
-
-        .report-section h2 {
-            font-size: 1.3rem;
-            margin: 0;
-            color: #2c3e50;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        /* Tables - Centered with proper spacing */
-        table {
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        }
-
-        thead {
-            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
-        }
-
-        th {
-            padding: 16px 20px;
-            text-align: left;
-            color: white;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 0.5px;
-            border-bottom: none;
-        }
-
-        td {
-            padding: 14px 20px;
-            border-bottom: 1px solid #eef0f7;
-            vertical-align: middle;
-        }
-
-        tbody tr {
-            transition: background-color 0.2s ease;
-        }
-
-        tbody tr:hover {
-            background-color: #f8fafd;
-        }
-
-        tbody tr:nth-child(even) {
-            background-color: #fcfdfe;
-        }
-
-        tbody tr:nth-child(even):hover {
-            background-color: #f8fafd;
-        }
-
-        /* Amount columns */
-        .amount {
-            text-align: right;
-            font-family: 'SF Mono', 'Monaco', 'Roboto Mono', monospace;
-            font-weight: 600;
-            color: #2e343a;
-        }
-
-        /* Status badges */
-        .status-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-        }
-
-        .status-regular {
-            background-color: #d1fae5;
-            color: #065f46;
-        }
-
-        .status-contract {
-            background-color: #e0f2fe;
-            color: #0c4a6e;
-        }
-
-        .status-probationary {
-            background-color: #fef3c7;
-            color: #92400e;
-        }
-
-        /* Print Report Button - Centered in container */
-        .btn-print {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.9rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-            min-width: 140px;
-            background: linear-gradient(135deg, #36b9cc 0%, #2c9faf 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(54, 185, 204, 0.3);
-        }
-
-        .btn-print:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(54, 185, 204, 0.4);
-            background: linear-gradient(135deg, #2c9faf 0%, #248895 100%);
-        }
-
-        .btn-print:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 10px rgba(54, 185, 204, 0.3);
-        }
-
-        /* Compa-Ratio colors */
-        .compa-red {
-            color: #e74a3b;
-            font-weight: 700;
-        }
-
-        .compa-green {
-            color: #1cc88a;
-            font-weight: 700;
-        }
-
-        /* Print styles */
+        body.dark-mode .card-custom { background: var(--dark-card); }
+        
+        /* Print Styles */
         @media print {
-            body.compensation-report {
-                background: white !important;
-                padding: 0 !important;
-            }
-
-            .page-wrapper {
-                padding: 0 !important;
-                display: block;
-            }
-
-            .container-fluid {
-                max-width: 100% !important;
-                padding: 0 !important;
-                margin: 0 !important;
-            }
-
-            .report-header {
+            @page { size: landscape; margin: 0.5cm; }
+            body, .main-content, .card-custom, table, th, td, .stat-card { 
+                background-color: #ffffff !important; 
+                color: #000000 !important; 
                 box-shadow: none !important;
-                border: 1px solid #ddd !important;
-                page-break-after: avoid;
+                border-color: #000000 !important;
             }
-
-            .report-section {
-                box-shadow: none !important;
-                border: 1px solid #ddd !important;
-                page-break-inside: avoid;
-            }
-
-            .btn-print {
-                display: none !important;
-            }
-
-            table {
-                box-shadow: none !important;
-                border: 1px solid #ddd !important;
-            }
-
-            thead {
-                background: #f8f9fc !important;
-                color: #000 !important;
-            }
-
-            th {
-                color: #000 !important;
-                border-bottom: 2px solid #000 !important;
-            }
+            .sidebar, .dashboard-header, .btn-print-group { display: none !important; }
+            .main-content { margin: 0; padding: 0; width: 100%; overflow: visible; }
+            .card-custom { border: none !important; margin-bottom: 20px; page-break-inside: auto; }
+            .table-responsive { overflow: visible !important; }
+            .table { font-size: 10pt; width: 100%; border-collapse: collapse !important; }
+            .table-bordered th, .table-bordered td { border: 1px solid #000 !important; }
+            tr { page-break-inside: avoid; }
+            .badge { border: 1px solid #000; color: #000; }
+            
+            /* Hide URL printing in some browsers */
+            a[href]:after { content: none !important; }
         }
-
-        /* Responsive Design */
-        @media (max-width: 1200px) {
-            .container-fluid {
-                padding: 0 15px;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        
+        .stat-card {
+            border-left: 4px solid var(--primary-color);
+            padding: 1.5rem;
         }
-
-        @media (max-width: 768px) {
-            .page-wrapper {
-                padding: 60px 15px 30px;
-            }
-
-            .report-header {
-                padding: 20px;
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .report-header>div:first-child {
-                min-width: auto;
-            }
-
-            .report-header>div:last-child {
-                width: 100%;
-                justify-content: center;
-            }
-
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 20px;
-            }
-
-            .stat-card {
-                padding: 20px;
-            }
-
-            .report-section {
-                padding: 20px;
-            }
-
-            table {
-                display: block;
-                overflow-x: auto;
-                white-space: nowrap;
-            }
-
-            th,
-            td {
-                padding: 12px 15px;
-            }
-
-            .btn-print {
-                min-width: 120px;
-                padding: 10px 18px;
-                font-size: 0.85rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .report-header h1 {
-                font-size: 1.5rem;
-            }
-
-            .stat-card .value {
-                font-size: 1.5rem;
-            }
-
-            .btn-print {
-                min-width: 100%;
-                margin-bottom: 10px;
-            }
-
-            .report-header>div:last-child {
-                flex-direction: column;
-            }
-        }
+        .stat-card.benefits { border-left-color: #1cc88a; }
+        .stat-card.variable { border-left-color: #f6c23e; }
+        
+        .stat-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #888; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; color: #5a5c69; }
+        body.dark-mode .stat-value { color: #f8f9fa; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
+<body class="<?php echo $currentTheme === 'dark' ? 'dark-mode' : ''; ?>">
 
-<body class="compensation-report">
-    <div class="page-wrapper">
-        <div class="container-fluid">
-
-            <!-- Report Header -->
-            <div class="report-header">
-                <div>
-                    <h1><i class="fas fa-chart-line"></i> Compensation Planning Report</h1>
-                    <p>Comprehensive analysis of salary grades, allowances, and payroll costs. Generated on <?php echo date('F j, Y'); ?></p>
-                </div>
-                <div>
-                    <button onclick="window.print()" class="btn-print">
-                        <i class="fas fa-print"></i> Print Report
-                    </button>
-                </div>
-            </div>
-
-            <!-- Executive Summary Stats -->
-            <div class="stats-grid">
-                <div class="stat-card" style="border-left-color: #4e73df;">
-                    <h3>Total Headcount</h3>
-                    <div class="value"><?php echo number_format($summary['headcount']); ?></div>
-                </div>
-                <div class="stat-card" style="border-left-color: #1cc88a;">
-                    <h3>Monthly Basic Pay</h3>
-                    <div class="value">₱<?php echo number_format($summary['monthly_basic'], 2); ?></div>
-                </div>
-                <div class="stat-card" style="border-left-color: #36b9cc;">
-                    <h3>Monthly Allowances</h3>
-                    <div class="value">₱<?php echo number_format($summary['monthly_allowances'], 2); ?></div>
-                </div>
-                <div class="stat-card" style="border-left-color: #f6c23e;">
-                    <h3>Est. Annual Cost</h3>
-                    <div class="value">₱<?php echo number_format($summary['annual_total'], 2); ?></div>
-                </div>
-            </div>
-
-            <!-- Salary Grade Distribution -->
-            <div class="report-section">
-                <div class="section-header">
-                    <h2><i class="fas fa-layer-group"></i> Salary Grade Distribution</h2>
-                    <span style="color: #6c757d; font-size: 0.9rem;">
-                        <?php echo count($grades); ?> Grade Levels Analyzed
-                    </span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Grade Level</th>
-                            <th>Grade Name</th>
-                            <th>Salary Range</th>
-                            <th style="text-align:center;">Employee Count</th>
-                            <th class="amount">Avg. Actual Salary</th>
-                            <th class="amount">Compa-Ratio</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (!empty($grades)): ?>
-                            <?php foreach ($grades as $grade):
-                                $midpoint = ($grade['min_salary'] + $grade['max_salary']) / 2;
-                                $compaRatio = ($midpoint > 0 && $grade['avg_actual_salary'] > 0) ?
-                                    ($grade['avg_actual_salary'] / $midpoint) * 100 : 0;
-                                $compaClass = ($compaRatio > 100) ? 'compa-red' : 'compa-green';
-                            ?>
-                                <tr>
-                                    <td style="font-weight: 600;"><?php echo htmlspecialchars($grade['grade_level']); ?></td>
-                                    <td><?php echo htmlspecialchars($grade['grade_name']); ?></td>
-                                    <td>₱<?php echo number_format($grade['min_salary']) . ' - ₱' . number_format($grade['max_salary']); ?></td>
-                                    <td style="text-align:center; font-weight: 600;">
-                                        <?php echo $grade['employee_count']; ?>
-                                    </td>
-                                    <td class="amount">
-                                        <?php echo ($grade['avg_actual_salary'] > 0) ? '₱' . number_format($grade['avg_actual_salary'], 2) : 'N/A'; ?>
-                                    </td>
-                                    <td class="amount <?php echo $compaClass; ?>">
-                                        <?php echo number_format($compaRatio, 1); ?>%
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="6" style="text-align:center; padding: 40px; color: #6c757d;">
-                                    <i class="fas fa-info-circle" style="font-size: 2rem; margin-bottom: 15px; display: block;"></i>
-                                    No salary grade data available. Please set up salary grades in the system.
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Detailed Compensation Register -->
-            <div class="report-section">
-                <div class="section-header">
-                    <h2><i class="fas fa-list-alt"></i> Detailed Compensation Register</h2>
-                    <span style="color: #6c757d; font-size: 0.9rem;">
-                        <?php echo count($details); ?> Active Employees
-                    </span>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Employee Name</th>
-                            <th>Department</th>
-                            <th>Position</th>
-                            <th>Status</th>
-                            <th class="amount">Basic Salary</th>
-                            <th class="amount">Allowances</th>
-                            <th class="amount">Total Monthly</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (!empty($details)): ?>
-                            <?php foreach ($details as $row):
-                                $totalMonthly = $row['basic_salary'] + $row['total_allowances'];
-                                $statusClass = 'status-' . strtolower($row['employment_status']);
-                            ?>
-                                <tr>
-                                    <td style="font-weight: 600;"><?php echo htmlspecialchars($row['name']); ?></td>
-                                    <td><?php echo htmlspecialchars($row['department']); ?></td>
-                                    <td><?php echo htmlspecialchars($row['job_title']); ?></td>
-                                    <td>
-                                        <span class="status-badge <?php echo $statusClass; ?>">
-                                            <?php echo htmlspecialchars($row['employment_status']); ?>
-                                        </span>
-                                    </td>
-                                    <td class="amount">₱<?php echo number_format($row['basic_salary'], 2); ?></td>
-                                    <td class="amount">₱<?php echo number_format($row['total_allowances'], 2); ?></td>
-                                    <td class="amount" style="font-weight: 800; color: #2c3e50;">
-                                        ₱<?php echo number_format($totalMonthly, 2); ?>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <tr>
-                                <td colspan="7" style="text-align:center; padding: 40px; color: #6c757d;">
-                                    <i class="fas fa-users-slash" style="font-size: 2rem; margin-bottom: 15px; display: block;"></i>
-                                    No active employee records found.
-                                </td>
-                            </tr>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Report Footer -->
-            <div style="text-align: center; margin-top: 40px; padding: 20px; color: #6c757d; font-size: 0.9rem;">
-                <p>This report is generated from the HR Compensation System. Data is current as of <?php echo date('F j, Y H:i'); ?>.</p>
-                <p style="margin-top: 5px;">For questions about this report, contact the HR Compensation Department.</p>
-            </div>
-
+    <div class="main-content">
+        
+        <!-- Print Header (Visible only in Print) -->
+        <div class="d-none d-print-block text-center mb-4">
+            <h2 class="fw-bold">SLATE FREIGHT</h2>
+            <h4 class="text-uppercase">Compensation Planning Report</h4>
+            <p class="text-muted">Generated on: <?php echo date('F d, Y'); ?></p>
+            <hr>
         </div>
+
+        <div class="d-flex justify-content-between align-items-center mb-4 btn-print-group">
+            <div>
+                <h1 class="h3 mb-0 text-gray-800"><i class="fas fa-file-invoice-dollar"></i> Compensation Analysis Report</h1>
+                <p class="text-muted">Consolidated view of all compensation modules</p>
+            </div>
+            <div>
+                <button onclick="printAsPDF()" class="btn btn-secondary me-2"><i class="fas fa-print"></i> Print</button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card card-custom stat-card">
+                    <div class="stat-label">Total Annual Payroll</div>
+                    <div class="stat-value text-primary"><?php echo formatMoney($totals['salary']); ?></div>
+                    <small>Base Salaries (Projected)</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-custom stat-card benefits">
+                    <div class="stat-label">Total Benefits & Allowances</div>
+                    <div class="stat-value text-success"><?php echo formatMoney($totals['benefits'] + $totals['allowances']); ?></div>
+                    <small>Employer Share + Fixed Allowances</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-custom stat-card variable">
+                    <div class="stat-label">Variable Pay Distributed</div>
+                    <div class="stat-value text-warning"><?php echo formatMoney($totals['incentives']); ?></div>
+                    <small>Total Incentives Granted</small>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card card-custom stat-card">
+                    <div class="stat-label">Total Investment</div>
+                    <div class="stat-value"><?php echo formatMoney($totals['grand_total']); ?></div>
+                    <small>Grand Total Compensation</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Department Summary Section -->
+        <div class="card card-custom mb-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 font-weight-bold text-success">Departmental Cost Summary</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm mb-0" id="summaryTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Department</th>
+                                <th class="text-center">Headcount</th>
+                                <th class="text-end">Base Salary (Annual)</th>
+                                <th class="text-end">Benefits & Allowances</th>
+                                <th class="text-end">Variable Pay</th>
+                                <th class="text-end">Total Investment</th>
+                                <th class="text-end">% of Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($deptSummary as $dept => $data): 
+                                $pct = ($totals['grand_total'] > 0) ? ($data['total'] / $totals['grand_total']) * 100 : 0;
+                            ?>
+                            <tr>
+                                <td class="fw-bold"><?php echo htmlspecialchars($dept); ?></td>
+                                <td class="text-center"><?php echo $data['headcount']; ?></td>
+                                <td class="text-end"><?php echo formatMoney($data['salary']); ?></td>
+                                <td class="text-end"><?php echo formatMoney($data['benefits_allowances']); ?></td>
+                                <td class="text-end"><?php echo formatMoney($data['variable']); ?></td>
+                                <td class="text-end fw-bold text-success"><?php echo formatMoney($data['total']); ?></td>
+                                <td class="text-end"><?php echo number_format($pct, 1); ?>%</td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Breakdown -->
+        <div class="card card-custom">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Employee Compensation Breakdown (Annualized)</h6>
+                <small class="text-muted">Generated on <?php echo date('F d, Y'); ?></small>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped" id="reportTable" width="100%" cellspacing="0">
+                        <thead>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Role / Dept</th>
+                                <th>Base Salary (Annual)</th>
+                                <th>Benefits (Annual)</th>
+                                <th>Allowances (Annual)</th>
+                                <th>Incentives (Total)</th>
+                                <th>Total Package</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($reportData as $row): ?>
+                            <tr>
+                                <td class="fw-bold"><?php echo htmlspecialchars($row['name']); ?></td>
+                                <td>
+                                    <?php echo htmlspecialchars($row['role']); ?><br>
+                                    <small class="text-muted"><?php echo htmlspecialchars($row['dept'] ?? '-'); ?></small>
+                                </td>
+                                <td><?php echo formatMoney($row['annual_salary']); ?></td>
+                                <td><?php echo formatMoney($row['annual_benefits']); ?></td>
+                                <td><?php echo formatMoney($row['annual_allowances']); ?></td>
+                                <td><?php echo formatMoney($row['total_incentives']); ?></td>
+                                <td class="fw-bold text-primary"><?php echo formatMoney($row['total_comp']); ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold bg-light">
+                                <td colspan="2" class="text-end">TOTALS:</td>
+                                <td><?php echo formatMoney($totals['salary']); ?></td>
+                                <td><?php echo formatMoney($totals['benefits']); ?></td>
+                                <td><?php echo formatMoney($totals['allowances']); ?></td>
+                                <td><?php echo formatMoney($totals['incentives']); ?></td>
+                                <td><?php echo formatMoney($totals['grand_total']); ?></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Adjustments Section (Footer) -->
+        <?php if (!empty($recentAdjustments)): ?>
+        <div class="card card-custom mt-4">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 font-weight-bold text-info">Recent Salary Adjustments Log</h6>
+            </div>
+            <div class="card-body p-0">
+                <table class="table mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Type</th>
+                            <th>Date</th>
+                            <th>Old Salary</th>
+                            <th>New Salary</th>
+                            <th>Increase</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($recentAdjustments as $adj): ?>
+                        <tr>
+                            <td><?php echo htmlspecialchars($adj['employee_name']); ?></td>
+                            <td><?php echo htmlspecialchars($adj['type_name']); ?></td>
+                            <td><?php echo htmlspecialchars($adj['effective_date']); ?></td>
+                            <td><?php echo formatMoney($adj['current_salary']); ?></td>
+                            <td><?php echo formatMoney($adj['new_salary']); ?></td>
+                            <td class="text-success">+<?php echo formatMoney($adj['adjustment_amount']); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
+
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Print Report functionality with confirmation
-        document.querySelector('.btn-print').addEventListener('click', function(e) {
-            e.preventDefault();
+        function printAsPDF() {
+            // Open the dedicated print page in a new window/tab
+            window.open('print-compensation-report.php', '_blank');
+        }
 
-            // Show print preview
-            if (confirm('Open print preview? Make sure your printer is ready.')) {
+        function downloadPDF() {
+            // Check if library is loaded
+            if (typeof html2pdf === 'undefined') {
+                alert('PDF library not loaded. Using browser print instead.');
                 window.print();
+                return;
             }
-        });
 
-        // Auto-refresh data every 10 minutes
-        setTimeout(function() {
-            if (confirm('The report data may be outdated. Would you like to refresh the page?')) {
-                window.location.reload();
-            }
-        }, 600000); // 10 minutes
+            const element = document.querySelector('.main-content');
+            const buttons = element.querySelector('.btn-print-group');
+            const printHeader = element.querySelector('.d-print-block');
 
-        // Add keyboard shortcut for printing (Ctrl+P)
-        document.addEventListener('keydown', function(e) {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-                e.preventDefault();
-                document.querySelector('.btn-print').click();
+            // 1. Prepare for PDF: Show header, hide buttons
+            // Store original states
+            const originalBtnDisplay = buttons ? buttons.style.display : '';
+            
+            // Hide buttons
+            if (buttons) buttons.style.display = 'none';
+
+            let headerWasHidden = false;
+            // The header has 'd-none d-print-block'. We need to override 'd-none'.
+            if (printHeader && printHeader.classList.contains('d-none')) {
+                printHeader.classList.remove('d-none');
+                headerWasHidden = true;
             }
-        });
+            // Also ensure it's displayed (d-print-block might rely on media query, we want it now)
+            if (printHeader) printHeader.style.display = 'block';
+
+            const opt = {
+                margin: 0.3,
+                filename: 'Compensation_Report_<?php echo date("Y-m-d"); ?>.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'in', format: 'landscape', orientation: 'landscape' }
+            };
+
+            // Generate PDF and then restore
+            html2pdf().set(opt).from(element).save().then(() => {
+                // Restore state
+                if (buttons) buttons.style.display = originalBtnDisplay;
+                if (printHeader) {
+                    printHeader.style.display = ''; // Revert inline style
+                    if (headerWasHidden) printHeader.classList.add('d-none');
+                }
+            }).catch(err => {
+                console.error(err);
+                alert('Error generating PDF. Please try the Print button.');
+                // Restore state on error too
+                if (buttons) buttons.style.display = originalBtnDisplay;
+                if (printHeader) {
+                    printHeader.style.display = '';
+                    if (headerWasHidden) printHeader.classList.add('d-none');
+                }
+            });
+        }
+
+        function exportTableToCSV(filename) {
+            var csv = [];
+            
+            // Helper to clean data for CSV
+            function cleanData(text) {
+                // Remove Peso sign and commas for clean numeric export
+                var clean = text.replace(/(\r\n|\n|\r)/gm, "").trim();
+                if (clean.includes('₱')) {
+                    clean = clean.replace(/[₱,]/g, ''); // Remove currency symbols and commas
+                }
+                return '"' + clean + '"';
+            }
+            
+            // 1. Add Report Metadata
+            csv.push('"SLATE FREIGHT - COMPENSATION ANALYSIS REPORT"');
+            csv.push('"Generated on: <?php echo date('F d, Y'); ?>"');
+            csv.push([]); // Blank line
+
+            // 2. Add Department Summary
+            csv.push('"DEPARTMENTAL COST SUMMARY"');
+            var summaryRows = document.querySelectorAll("table#summaryTable tr");
+            for (var i = 0; i < summaryRows.length; i++) {
+                var row = [], cols = summaryRows[i].querySelectorAll("td, th");
+                for (var j = 0; j < cols.length; j++) 
+                    row.push(cleanData(cols[j].innerText));
+                csv.push(row.join(","));        
+            }
+
+            // 2b. Add Department Summary Totals (if footer exists) or just ensure it's captured
+            // The current implementation captures all rows including headers.
+
+            csv.push([]); // Blank line
+            csv.push([]); // Blank line
+
+            // 3. Add Detailed Breakdown
+            csv.push('"EMPLOYEE COMPENSATION BREAKDOWN"');
+            var detailRows = document.querySelectorAll("table#reportTable tr");
+            for (var i = 0; i < detailRows.length; i++) {
+                var row = [], cols = detailRows[i].querySelectorAll("td, th");
+                for (var j = 0; j < cols.length; j++) 
+                    row.push(cleanData(cols[j].innerText));
+                csv.push(row.join(","));        
+            }
+            // Capture footer of detail table
+            var detailFoot = document.querySelectorAll("table#reportTable tfoot tr");
+            for (var i = 0; i < detailFoot.length; i++) {
+                var row = [], cols = detailFoot[i].querySelectorAll("td, th");
+                for (var j = 0; j < cols.length; j++) 
+                    row.push(cleanData(cols[j].innerText));
+                csv.push(row.join(","));  
+            }
+
+            downloadCSV(csv.join("\n"), filename);
+        }
+
+        function downloadCSV(csv, filename) {
+            var csvFile;
+            var downloadLink;
+
+            // Add UTF-8 BOM to ensure Excel renders characters correctly
+            csvFile = new Blob(["\uFEFF" + csv], {type: "text/csv;charset=utf-8;"});
+            
+            downloadLink = document.createElement("a");
+            downloadLink.download = filename;
+            downloadLink.href = window.URL.createObjectURL(csvFile);
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+        }
     </script>
 </body>
-
 </html>
-<?php ob_end_flush(); ?>

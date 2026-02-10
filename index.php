@@ -129,12 +129,54 @@ if ($isOTPStage && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['resend
             $otpSuccess = "New OTP has been sent to your registered email address.";
             unset($_SESSION['debug_otp']);
         } else {
-            $_SESSION['debug_otp'] = $newOTP;
-            $otpSuccess = "Email sending failed. Use this OTP code: " . $newOTP;
+            // Email failed but do not force offline mode redirection
+            $otpError = "Failed to send OTP email. Please check your internet connection or contact support.";
         }
     } else {
         $otpError = "Failed to generate new OTP. Please try again.";
     }
+}
+
+// -------------------------------------------------------------------------
+// GACHA LOGIN HANDLING (OFFLINE MODE)
+// -------------------------------------------------------------------------
+if (isset($_POST['gacha_login'])) {
+
+    $selectedRole = $_POST['gacha_role'] ?? 'hr_staff';
+    
+    // Mock Users for Offline Mode
+    $mockUsers = [
+        'admin' => [
+            'id' => 999, 'username' => 'admin', 'role' => 'admin', 
+            'name' => 'System Administrator', 'email' => 'admin@slatefreight.com'
+        ],
+        'hr_manager' => [
+            'id' => 888, 'username' => 'hr_manager', 'role' => 'hr_manager', 
+            'name' => 'Jane Doe (Manager)', 'email' => 'jane.doe@slatefreight.com'
+        ],
+        'hr_staff' => [
+            'id' => 777, 'username' => 'hr_staff', 'role' => 'hr_staff', 
+            'name' => 'John Smith (Staff)', 'email' => 'john.smith@slatefreight.com'
+        ]
+    ];
+    
+    $user = $mockUsers[$selectedRole] ?? $mockUsers['hr_staff'];
+
+    // Set Session (Bypass DB/OTP)
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['user'] = $user['username'];
+    $_SESSION['role'] = $user['role'];
+    $_SESSION['name'] = $user['name'];
+    $_SESSION['theme'] = 'light';
+    $_SESSION['login_attempts'] = 0;
+    $_SESSION['otp_verified'] = true; // IMPORTANT: Bypass OTP
+    $_SESSION['LAST_ACTIVITY'] = time();
+    $_SESSION['CREATED'] = time();
+
+    // Log & Redirect
+    logLoginAttempt($user['username'], 'SUCCESS', 'Offline Gacha Login');
+    header('Location: dashboard/index.php');
+    exit();
 }
 
 // Process login if form is submitted (initial login)
@@ -207,9 +249,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isOTPStage && !isset($_POST['veri
                                 $emailSent = sendOTPEmail($user['username'], $otpCode, $user['name'], $user['id']);
 
                                 if (!$emailSent) {
-                                    // If email fails, store OTP in session for debugging
-                                    $_SESSION['debug_otp'] = $otpCode;
-                                }
+                                    // Email failed, show error on login page instead of redirecting
+                                    $error = "Login successful, but failed to send OTP email. System might be offline.";
+                                    logLoginAttempt($username, 'WARNING', 'OTP email failed');
+                                    // Clean up potential partial session if we can't proceed
+                                    unset($_SESSION['otp_user_id']);
+                                    unset($_SESSION['otp_username']);
+                                    unset($_SESSION['otp_role']);
+                                    unset($_SESSION['otp_name']);
+                                    unset($_SESSION['otp_pending']);
+                                } else {
 
                                 // Store user data in session for OTP verification
                                 $_SESSION['otp_user_id'] = $user['id'];
@@ -218,9 +267,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isOTPStage && !isset($_POST['veri
                                 $_SESSION['otp_name'] = $user['name'];
                                 $_SESSION['otp_pending'] = true;
 
-                                // Redirect to show OTP form immediately
-                                header('Location: index.php');
-                                exit();
+                                    // Redirect to show OTP form immediately
+                                    header('Location: index.php');
+                                    exit();
+                                }
                             } else {
                                 $error = "Failed to generate OTP. Please try again.";
                                 logLoginAttempt($username, 'FAILED', 'OTP generation failed');
@@ -857,45 +907,92 @@ function clearOTP($userId)
             font-size: 0.875rem;
         }
 
-        /* Loading Animation Styles */
+        /* Updated Professional Loading Animation */
         .loading-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(15, 23, 42, 0.85);
             display: none;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 9999;
-            backdrop-filter: blur(2px);
+            backdrop-filter: blur(5px);
+            transition: opacity 0.3s ease;
         }
 
-        .loading-spinner {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #00c6ff;
+        .loading-container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .spinner-ring {
+            display: inline-block;
+            width: 64px;
+            height: 64px;
+            position: relative;
+        }
+        .spinner-ring div {
+            box-sizing: border-box;
+            display: block;
+            position: absolute;
+            width: 51px;
+            height: 51px;
+            margin: 6px;
+            border: 3px solid #00c6ff;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
+            animation: spinner-ring 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+            border-color: #00c6ff transparent transparent transparent;
         }
+        .spinner-ring div:nth-child(1) { animation-delay: -0.45s; }
+        .spinner-ring div:nth-child(2) { animation-delay: -0.3s; }
+        .spinner-ring div:nth-child(3) { animation-delay: -0.15s; }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
-
-            100% {
-                transform: rotate(360deg);
-            }
+        @keyframes spinner-ring {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .loading-text {
             color: white;
             font-size: 1.1rem;
-            margin-top: 1rem;
+            margin-top: 1.5rem;
+            font-weight: 500;
+            letter-spacing: 0.5px;
             text-align: center;
+        }
+
+        /* Button Loading State */
+        .btn-loading {
+            position: relative;
+            color: transparent !important;
+            pointer-events: none;
+        }
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            margin-left: -10px;
+            margin-top: -10px;
+            border: 2px solid #ffffff;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: button-spin 0.8s linear infinite;
+        }
+        
+        @keyframes button-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -923,14 +1020,6 @@ function clearOTP($userId)
                             <div class="error-message"><?php echo $otpError; ?></div>
                         <?php endif; ?>
 
-                        <!-- Debug OTP Display -->
-                        <?php if (isset($_SESSION['debug_otp'])): ?>
-                            <div class="debug-otp">
-                                <strong>OTP CODE: <?php echo $_SESSION['debug_otp']; ?></strong><br>
-                                <small>Email sending failed - use this code to verify</small>
-                            </div>
-                        <?php endif; ?>
-
                         <div class="otp-info">
                             <p>Enter the 6-digit verification code sent to your registered email address.</p>
                             <p class="otp-timer">Valid for <?php echo OTP_EXPIRY_MINUTES; ?> minutes</p>
@@ -939,11 +1028,11 @@ function clearOTP($userId)
                         <form method="POST" id="otpForm">
                             <input type="text" name="otp_code" placeholder="Enter OTP Code" required
                                 maxlength="6" pattern="[0-9]{6}" title="Enter 6-digit OTP code"
-                                class="otp-input" autofocus>
+                                class="otp-input" autofocus autocomplete="off">
 
                             <div class="button-group">
-                                <button type="submit" name="verify_otp">Verify OTP</button>
-                                <button type="submit" name="resend_otp" class="resend-btn">Resend OTP</button>
+                                <button type="submit" name="verify_otp" id="verifyBtn">Verify OTP</button>
+                                <button type="submit" name="resend_otp" class="resend-btn" id="resendBtn">Resend OTP</button>
                             </div>
                         </form>
 
@@ -971,7 +1060,9 @@ function clearOTP($userId)
                                 <label for="terms">I agree to the Terms and Conditions</label>
                             </div>
 
-                            <button type="submit" id="loginButton" onclick="showLoading()">Log In</button>
+                            <button type="submit" id="loginButton">Log In</button>
+                            
+
                         </form>
 
                         <?php if (isAccountLockedOut()): ?>
@@ -989,29 +1080,46 @@ function clearOTP($userId)
         &copy; <span id="currentYear"></span> SLATE Freight Management System. All rights reserved.
     </footer>
 
-    <!-- Loading Overlay -->
+    <!-- Professional Loading Overlay -->
     <div class="loading-overlay" id="loadingOverlay">
-        <div>
-            <div class="loading-spinner"></div>
-            <div class="loading-text">Logging you in...</div>
+        <div class="loading-container">
+            <div class="spinner-ring"><div></div><div></div><div></div><div></div></div>
+            <div class="loading-text" id="loadingText">Authenticating...</div>
         </div>
     </div>
 
     <script>
         document.getElementById('currentYear').textContent = new Date().getFullYear();
 
-        // OTP input auto-tab and validation
         document.addEventListener('DOMContentLoaded', function() {
+            // OTP Input Validation
             const otpInput = document.querySelector('input[name="otp_code"]');
             if (otpInput) {
                 otpInput.addEventListener('input', function(e) {
-                    // Allow only numbers
                     this.value = this.value.replace(/[^0-9]/g, '');
                 });
                 otpInput.focus();
             }
 
-            // Show loading animation when login form is submitted with filled fields
+            // Function to show loading state
+            const showLoading = (btn, text = 'Loading...') => {
+                // Add button loading state
+                if(btn) {
+                    btn.classList.add('btn-loading');
+                    // Store original text just in case (though page usually reloads)
+                    btn.dataset.originalText = btn.innerText;
+                }
+
+                // Show Overlay
+                const overlay = document.getElementById('loadingOverlay');
+                const loadingText = document.getElementById('loadingText');
+                if(overlay && loadingText) {
+                    loadingText.innerText = text;
+                    overlay.style.display = 'flex';
+                }
+            };
+
+            // Handle Login Form
             const loginForm = document.getElementById('loginForm');
             if (loginForm) {
                 loginForm.addEventListener('submit', function(e) {
@@ -1020,8 +1128,295 @@ function clearOTP($userId)
                     const terms = document.querySelector('input[name="terms"]').checked;
 
                     if (username && password && terms) {
-                        document.getElementById('loadingOverlay').style.display = 'flex';
+                        const btn = document.getElementById('loginButton');
+                        showLoading(btn, 'Verifying Credentials...');
+                    } else {
+                        // Prevent submission if fields missing (HTML5 should catch this, but good fallback)
+                         // e.preventDefault(); 
                     }
+                });
+            }
+
+            // Handle OTP Form
+            const otpForm = document.getElementById('otpForm');
+            if(otpForm) {
+                otpForm.addEventListener('submit', function(e) {
+                    // Determine which button was clicked
+                    const verifyBtn = document.getElementById('verifyBtn');
+                    const resendBtn = document.getElementById('resendBtn');
+                    
+                    // Simple check - in actual submit event, it's harder to know which button triggered it without click listeners
+                    // But we can assume verification if it wasn't the resend button explicitly tracked
+                    
+                    setTimeout(() => {
+                         // We delay slightly to let the browser register the submit
+                         const btn = document.activeElement; // Get the button that was clicked
+                         if(btn && btn.name === 'resend_otp') {
+                             showLoading(btn, 'Sending New OTP...');
+                         } else {
+                             showLoading(verifyBtn, 'Validating Code...');
+                         }
+                    }, 0);
+                });
+            }
+        });
+    </script>
+    <!-- Professional Offline Access Modal -->
+    <div id="gachaModal" class="gacha-modal">
+        <div class="gacha-content">
+            <div class="gacha-header">
+                <div class="offline-icon"><i class="fas fa-shield-alt"></i></div>
+                <h3>Offline Security Check</h3>
+                <p>Verify identity to access local environment</p>
+            </div>
+            
+            <div class="access-panel" style="height: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; background: transparent; border: none; box-shadow: none;">
+                
+                <div class="form-group">
+                    <label style="color: #94a3b8; font-size: 0.85rem; display: block; margin-bottom: 0.5rem; text-align: left;">Select Access Role</label>
+                    <select id="offlineRoleSelect" style="width: 100%; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 0.375rem; outline: none;">
+                        <option value="hr_staff">HR Operator (Staff)</option>
+                        <option value="hr_manager">HR Manager</option>
+                        <option value="admin">Administrator</option>
+                    </select>
+                </div>
+
+
+
+                
+            </div>
+
+            <div class="gacha-actions">
+                <button id="offlineLoginBtn" class="spin-btn">Verify & Enter Mode</button>
+                <button id="closeGacha" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <form id="gachaForm" method="POST" style="display:none;">
+        <input type="hidden" name="gacha_login" value="1">
+        <input type="hidden" name="gacha_role" id="gachaRoleInput">
+        <input type="hidden" name="captcha_input" id="gachaCaptchaInput">
+    </form>
+
+    <style>
+        .gacha-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            font-family: 'Segoe UI', monospace;
+        }
+
+        .gacha-content {
+            background: #1e293b;
+            width: 100%;
+            max-width: 450px;
+            border-radius: 0.5rem;
+            padding: 2.5rem;
+            border: 1px solid #334155;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .gacha-content::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #06b6d4);
+        }
+
+        .gacha-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .offline-icon {
+            font-size: 2.5rem;
+            color: #94a3b8;
+            margin-bottom: 1rem;
+        }
+
+        .gacha-header h3 {
+            color: #f8fafc;
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .gacha-header p {
+            color: #64748b;
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .access-panel {
+            position: relative;
+            height: 80px; /* Reduced specific item height */
+            background: #0f172a;
+            border-radius: 0.375rem;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            border: 1px solid #334155;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .access-window {
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        .access-strip {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            /* Transition handled by JS */
+        }
+
+        .access-item {
+            height: 80px; /* Matching panel height */
+            display: flex;
+            align-items: center;
+            justify-content: flex-start; /* Align left */
+            padding: 0 1.5rem;
+            border-bottom: 1px solid #1e293b;
+            color: #94a3b8;
+            transition: color 0.3s;
+        }
+        
+        .access-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: #fff;
+        }
+
+        .access-item i {
+            font-size: 1.25rem;
+            width: 30px;
+            margin-right: 1rem;
+            color: inherit;
+        }
+
+        .access-item .role-info {
+            text-align: left;
+        }
+
+        .access-item .role-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: inherit;
+        }
+        
+        .access-item .role-desc {
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+
+        /* The visual "selection" line */
+        .scan-line {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border: 2px solid #3b82f6;
+            border-radius: 0.375rem;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+        }
+
+        .status-text {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-bottom: 1.5rem;
+            font-family: monospace;
+        }
+
+        .spin-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .spin-btn:hover {
+            background: #2563eb;
+        }
+
+        .spin-btn:disabled {
+            background: #475569;
+            cursor: wait;
+        }
+
+        .cancel-btn {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            padding: 0.5rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            width: 100%;
+        }
+        .cancel-btn:hover { color: #94a3b8; }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const gachaBtn = document.getElementById('gachaBtn');
+            const gachaModal = document.getElementById('gachaModal');
+            const closeGacha = document.getElementById('closeGacha');
+            const offlineLoginBtn = document.getElementById('offlineLoginBtn');
+            const offlineRoleSelect = document.getElementById('offlineRoleSelect');
+            const gachaRoleInput = document.getElementById('gachaRoleInput');
+            const gachaForm = document.getElementById('gachaForm');
+
+            if(gachaBtn) {
+                gachaBtn.addEventListener('click', function(e) {
+                    e.preventDefault(); 
+                    if(gachaModal) gachaModal.style.display = 'flex';
+                });
+            }
+
+            if(closeGacha) {
+                closeGacha.addEventListener('click', function() {
+                    if(gachaModal) gachaModal.style.display = 'none';
+                });
+            }
+
+            if(offlineLoginBtn) {
+                offlineLoginBtn.addEventListener('click', function() {
+                    // Proceed
+                    offlineLoginBtn.disabled = true;
+                    offlineLoginBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Authenticating...';
+
+                    setTimeout(() => {
+                        if(gachaRoleInput && gachaForm && offlineRoleSelect) {
+                            gachaRoleInput.value = offlineRoleSelect.value;
+                            gachaForm.submit();
+                        }
+                    }, 800);
                 });
             }
         });

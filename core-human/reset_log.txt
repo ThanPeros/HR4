@@ -1,0 +1,15 @@
+Starting reset...
+Connected to DB
+Truncated employees
+Truncated family_dependents
+Truncated emergency_contacts
+Truncated salary_history
+Truncated disciplinary_cases
+Truncated performance_reviews
+Truncated employee_documents
+Truncated work_experience
+Truncated educational_background
+Truncated seminars
+Truncated skills
+Inserted Employee
+Done completely.

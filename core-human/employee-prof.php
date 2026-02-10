@@ -61,7 +61,19 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_hired` DATE NULL AFTER `passport_no`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_regularized` DATE NULL AFTER `date_hired`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `resume_file` VARCHAR(255) NULL AFTER `photo`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `diploma_file` VARCHAR(255) NULL AFTER `resume_file`"
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `diploma_file` VARCHAR(255) NULL AFTER `resume_file`",
+            
+            // New Columns for Extended Profile
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `manager` VARCHAR(100) NULL AFTER `department`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `work_schedule` VARCHAR(100) NULL AFTER `manager`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `pay_grade` VARCHAR(50) NULL AFTER `salary`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `bank_name` VARCHAR(50) NULL AFTER `pay_grade`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `bank_account_no` VARCHAR(50) NULL AFTER `bank_name`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hmo_provider` VARCHAR(50) NULL AFTER `bank_account_no`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hmo_number` VARCHAR(50) NULL AFTER `hmo_provider`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_vacation` FLOAT DEFAULT 0 AFTER `hmo_number`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_sick` FLOAT DEFAULT 0 AFTER `leave_credits_vacation`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `job_description` TEXT NULL AFTER `job_title`"
         ];
 
         foreach ($alter_queries as $query) {
@@ -73,7 +85,7 @@ function initDatabase()
             }
         }
 
-        // Create emergency_contacts table if it doesn't exist
+        // Create emergency_contacts table
         $pdo->exec("CREATE TABLE IF NOT EXISTS `emergency_contacts` (
             `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
             `employee_id` int(6) UNSIGNED NOT NULL,
@@ -83,6 +95,60 @@ function initDatabase()
             `email` varchar(100) DEFAULT NULL,
             `address` text DEFAULT NULL,
             `is_primary` tinyint(1) DEFAULT 0,
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `employee_id` (`employee_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Create family_dependents table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `family_dependents` (
+            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `employee_id` int(6) UNSIGNED NOT NULL,
+            `name` varchar(100) NOT NULL,
+            `relationship` varchar(50) NOT NULL,
+            `birth_date` date DEFAULT NULL,
+            `contact_number` varchar(20) DEFAULT NULL,
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `employee_id` (`employee_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Create salary_history table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `salary_history` (
+            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `employee_id` int(6) UNSIGNED NOT NULL,
+            `amount` decimal(10,2) NOT NULL,
+            `effective_date` date NOT NULL,
+            `type` varchar(50) NOT NULL DEFAULT 'Increase',
+            `remarks` text DEFAULT NULL,
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `employee_id` (`employee_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // Create disciplinary_cases table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `disciplinary_cases` (
+            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `employee_id` int(6) UNSIGNED NOT NULL,
+            `violation` varchar(100) NOT NULL,
+            `description` text DEFAULT NULL,
+            `action_taken` varchar(100) DEFAULT NULL,
+            `date_reported` date NOT NULL,
+            `date_closed` date DEFAULT NULL,
+            `status` varchar(20) DEFAULT 'Open',
+            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `employee_id` (`employee_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        
+        // Create performance_reviews table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `performance_reviews` (
+            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `employee_id` int(6) UNSIGNED NOT NULL,
+            `review_date` date NOT NULL,
+            `rating` varchar(20) NOT NULL,
+            `evaluator` varchar(100) DEFAULT NULL,
+            `comments` text DEFAULT NULL,
             `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
             PRIMARY KEY (`id`),
             KEY `employee_id` (`employee_id`)
@@ -146,6 +212,18 @@ function initDatabase()
             PRIMARY KEY (`id`),
             KEY `employee_id` (`employee_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        
+        // Create employee_documents table (201 Files)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `employee_documents` (
+            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `employee_id` int(6) UNSIGNED NOT NULL,
+            `document_name` varchar(100) NOT NULL,
+            `document_type` varchar(50) NOT NULL,
+            `file_path` varchar(255) NOT NULL,
+            `upload_date` timestamp NOT NULL DEFAULT current_timestamp(),
+            PRIMARY KEY (`id`),
+            KEY `employee_id` (`employee_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
         // Update existing employees with sample data if needed
         $stmt = $pdo->query("SELECT COUNT(*) as count FROM `employees` WHERE `employee_id` IS NULL LIMIT 1");
@@ -178,7 +256,7 @@ function handleFileUpload($file, $employee_id, $type = 'photo')
     finfo_close($finfo);
 
     $allowed_types = $GLOBALS['allowed_types'];
-    if ($type === 'resume' || $type === 'diploma' || $type === 'certificate' || $type === 'education_diploma' || $type === 'certification') {
+    if ($type === 'resume' || $type === 'diploma' || $type === 'certificate' || $type === 'education_diploma' || $type === 'certification' || $type === 'document') {
         $allowed_types = array_merge($allowed_types, $GLOBALS['allowed_doc_types']);
     }
 
@@ -223,6 +301,43 @@ function getEmployees($department = null, $status = null)
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
+    return $stmt->fetchAll();
+    return $stmt->fetchAll();
+}
+
+// Get family dependents
+function getDependents($employee_id)
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT * FROM `family_dependents` WHERE employee_id = ? ORDER BY birth_date DESC");
+    $stmt->execute([$employee_id]);
+    return $stmt->fetchAll();
+}
+
+// Get salary history
+function getSalaryHistory($employee_id)
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT * FROM `salary_history` WHERE employee_id = ? ORDER BY effective_date DESC");
+    $stmt->execute([$employee_id]);
+    return $stmt->fetchAll();
+}
+
+// Get disciplinary cases
+function getDisciplinaryCases($employee_id)
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT * FROM `disciplinary_cases` WHERE employee_id = ? ORDER BY date_reported DESC");
+    $stmt->execute([$employee_id]);
+    return $stmt->fetchAll();
+}
+
+// Get performance reviews
+function getPerformanceReviews($employee_id)
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT * FROM `performance_reviews` WHERE employee_id = ? ORDER BY review_date DESC");
+    $stmt->execute([$employee_id]);
     return $stmt->fetchAll();
 }
 
@@ -319,7 +434,17 @@ function updateEmployee($id, $data)
         'pagibig_no',
         'passport_no',
         'date_hired',
-        'date_regularized'
+        'date_regularized',
+        'manager',
+        'work_schedule',
+        'pay_grade',
+        'bank_name',
+        'bank_account_no',
+        'hmo_provider',
+        'hmo_number',
+        'leave_credits_vacation',
+        'leave_credits_sick',
+        'job_description'
     ];
 
     foreach ($allowed_fields as $field) {
@@ -514,6 +639,54 @@ function saveWorkExperience($employee_id, $work_data, $work_id = null)
     }
 }
 
+// Add/update dependent
+function saveDependent($employee_id, $data, $id = null) {
+    $pdo = getDB();
+    if ($id) {
+        $stmt = $pdo->prepare("UPDATE family_dependents SET name=?, relationship=?, birth_date=?, contact_number=? WHERE id=? AND employee_id=?");
+        return $stmt->execute([$data['name'], $data['relationship'], $data['birth_date'], $data['contact_number'], $id, $employee_id]);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO family_dependents (employee_id, name, relationship, birth_date, contact_number) VALUES (?, ?, ?, ?, ?)");
+        return $stmt->execute([$employee_id, $data['name'], $data['relationship'], $data['birth_date'], $data['contact_number']]);
+    }
+}
+
+// Add/update salary history
+function saveSalaryHistory($employee_id, $data, $id = null) {
+    $pdo = getDB();
+    if ($id) {
+        $stmt = $pdo->prepare("UPDATE salary_history SET amount=?, effective_date=?, type=?, remarks=? WHERE id=? AND employee_id=?");
+        return $stmt->execute([$data['amount'], $data['effective_date'], $data['type'], $data['remarks'], $id, $employee_id]);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO salary_history (employee_id, amount, effective_date, type, remarks) VALUES (?, ?, ?, ?, ?)");
+        return $stmt->execute([$employee_id, $data['amount'], $data['effective_date'], $data['type'], $data['remarks']]);
+    }
+}
+
+// Add/update disciplinary case
+function saveDisciplinaryCase($employee_id, $data, $id = null) {
+    $pdo = getDB();
+    if ($id) {
+        $stmt = $pdo->prepare("UPDATE disciplinary_cases SET violation=?, description=?, action_taken=?, date_reported=?, date_closed=?, status=? WHERE id=? AND employee_id=?");
+        return $stmt->execute([$data['violation'], $data['description'], $data['action_taken'], $data['date_reported'], $data['date_closed'], $data['status'], $id, $employee_id]);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO disciplinary_cases (employee_id, violation, description, action_taken, date_reported, date_closed, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        return $stmt->execute([$employee_id, $data['violation'], $data['description'], $data['action_taken'], $data['date_reported'], $data['date_closed'], $data['status']]);
+    }
+}
+
+// Add/update performance review
+function savePerformanceReview($employee_id, $data, $id = null) {
+    $pdo = getDB();
+    if ($id) {
+        $stmt = $pdo->prepare("UPDATE performance_reviews SET review_date=?, rating=?, evaluator=?, comments=? WHERE id=? AND employee_id=?");
+        return $stmt->execute([$data['review_date'], $data['rating'], $data['evaluator'], $data['comments'], $id, $employee_id]);
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO performance_reviews (employee_id, review_date, rating, evaluator, comments) VALUES (?, ?, ?, ?, ?)");
+        return $stmt->execute([$employee_id, $data['review_date'], $data['rating'], $data['evaluator'], $data['comments']]);
+    }
+}
+
 // Delete emergency contact
 function deleteEmergencyContact($contact_id, $employee_id)
 {
@@ -575,6 +748,117 @@ function deleteWorkExperience($work_id, $employee_id)
         return $stmt->execute([$work_id, $employee_id]);
     } catch (Exception $e) {
         error_log("Delete work experience error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Delete dependent
+function deleteDependent($id, $employee_id) {
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("DELETE FROM family_dependents WHERE id=? AND employee_id=?");
+        return $stmt->execute([$id, $employee_id]);
+    } catch (Exception $e) {
+        error_log("Delete dependent error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Delete salary history
+function deleteSalaryHistory($id, $employee_id) {
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("DELETE FROM salary_history WHERE id=? AND employee_id=?");
+        return $stmt->execute([$id, $employee_id]);
+    } catch (Exception $e) {
+        error_log("Delete salary history error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Delete disciplinary case
+function deleteDisciplinaryCase($id, $employee_id) {
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("DELETE FROM disciplinary_cases WHERE id=? AND employee_id=?");
+        return $stmt->execute([$id, $employee_id]);
+    } catch (Exception $e) {
+        error_log("Delete disciplinary case error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Delete performance review
+function deletePerformanceReview($id, $employee_id) {
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("DELETE FROM performance_reviews WHERE id=? AND employee_id=?");
+        return $stmt->execute([$id, $employee_id]);
+    } catch (Exception $e) {
+        error_log("Delete performance review error: " . $e->getMessage());
+        return false;
+    }
+}
+
+
+// Get documents for employee
+function getEmployeeDocuments($employee_id)
+{
+    $pdo = getDB();
+    $stmt = $pdo->prepare("SELECT * FROM `employee_documents` WHERE employee_id = ? ORDER BY upload_date DESC");
+    $stmt->execute([$employee_id]);
+    return $stmt->fetchAll();
+}
+
+// Add/update employee document
+function saveEmployeeDocument($employee_id, $doc_data, $doc_id = null)
+{
+    $pdo = getDB();
+
+    if ($doc_id) {
+        $sql = "UPDATE `employee_documents` SET document_name=?, document_type=? WHERE id=? AND employee_id=?";
+        $params = [
+            $doc_data['document_name'],
+            $doc_data['document_type'],
+            $doc_id,
+            $employee_id
+        ];
+        
+        if (isset($doc_data['file_path'])) {
+             $sql = "UPDATE `employee_documents` SET document_name=?, document_type=?, file_path=? WHERE id=? AND employee_id=?";
+             $params = [
+                $doc_data['document_name'],
+                $doc_data['document_type'],
+                $doc_data['file_path'],
+                $doc_id,
+                $employee_id
+            ];
+        }
+
+        $stmt = $pdo->prepare($sql);
+        return $stmt->execute($params);
+
+    } else {
+        $sql = "INSERT INTO `employee_documents` (employee_id, document_name, document_type, file_path) VALUES (?, ?, ?, ?)";
+        $stmt = $pdo->prepare($sql);
+        return $stmt->execute([
+            $employee_id,
+            $doc_data['document_name'],
+            $doc_data['document_type'],
+            $doc_data['file_path']
+        ]);
+    }
+}
+
+// Delete employee document
+function deleteEmployeeDocument($doc_id, $employee_id)
+{
+    try {
+        $pdo = getDB();
+        $stmt = $pdo->prepare("DELETE FROM `employee_documents` WHERE id = ? AND employee_id = ?");
+        return $stmt->execute([$doc_id, $employee_id]);
+    } catch (Exception $e) {
+        error_log("Delete document error: " . $e->getMessage());
         return false;
     }
 }
@@ -705,6 +989,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'save_dependent':
+                $employee_id = $_POST['employee_id'] ?? '';
+                $id = $_POST['dependent_id'] ?? null;
+                if ($employee_id && saveDependent($employee_id, $_POST, $id)) {
+                    $response = ['success' => true, 'message' => 'Dependent saved successfully'];
+                } else {
+                    $response['message'] = 'Failed to save dependent';
+                }
+                break;
+
+            case 'save_salary':
+                $employee_id = $_POST['employee_id'] ?? '';
+                $id = $_POST['salary_id'] ?? null;
+                if ($employee_id && saveSalaryHistory($employee_id, $_POST, $id)) {
+                    $response = ['success' => true, 'message' => 'Salary history saved successfully'];
+                } else {
+                    $response['message'] = 'Failed to save salary history';
+                }
+                break;
+
+            case 'save_disciplinary':
+                $employee_id = $_POST['employee_id'] ?? '';
+                $id = $_POST['disciplinary_id'] ?? null;
+                if ($employee_id && saveDisciplinaryCase($employee_id, $_POST, $id)) {
+                    $response = ['success' => true, 'message' => 'Disciplinary case saved successfully'];
+                } else {
+                    $response['message'] = 'Failed to save disciplinary case';
+                }
+                break;
+
+            case 'save_performance':
+                $employee_id = $_POST['employee_id'] ?? '';
+                $id = $_POST['performance_id'] ?? null;
+                if ($employee_id && savePerformanceReview($employee_id, $_POST, $id)) {
+                    $response = ['success' => true, 'message' => 'Performance review saved successfully'];
+                } else {
+                    $response['message'] = 'Failed to save performance review';
+                }
+                break;
+
             case 'delete_contact':
                 $contact_id = $_POST['contact_id'] ?? '';
                 $employee_id = $_POST['employee_id'] ?? '';
@@ -755,6 +1079,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'delete_dependent':
+                $id = $_POST['dependent_id'] ?? '';
+                $employee_id = $_POST['employee_id'] ?? '';
+                if (!empty($id) && !empty($employee_id) && deleteDependent($id, $employee_id)) {
+                    $response = ['success' => true, 'message' => 'Dependent deleted successfully'];
+                } else {
+                    $response['message'] = 'Failed to delete dependent';
+                }
+                break;
+
+             case 'delete_salary':
+                $id = $_POST['salary_id'] ?? '';
+                $employee_id = $_POST['employee_id'] ?? '';
+                if (!empty($id) && !empty($employee_id) && deleteSalaryHistory($id, $employee_id)) {
+                    $response = ['success' => true, 'message' => 'Salary history deleted successfully'];
+                } else {
+                    $response['message'] = 'Failed to delete salary history';
+                }
+                break;
+
+             case 'delete_disciplinary':
+                $id = $_POST['disciplinary_id'] ?? '';
+                $employee_id = $_POST['employee_id'] ?? '';
+                if (!empty($id) && !empty($employee_id) && deleteDisciplinaryCase($id, $employee_id)) {
+                    $response = ['success' => true, 'message' => 'Disciplinary case deleted successfully'];
+                } else {
+                    $response['message'] = 'Failed to delete disciplinary case';
+                }
+                break;
+
+             case 'delete_performance':
+                $id = $_POST['performance_id'] ?? '';
+                $employee_id = $_POST['employee_id'] ?? '';
+                if (!empty($id) && !empty($employee_id) && deletePerformanceReview($id, $employee_id)) {
+                    $response = ['success' => true, 'message' => 'Performance review deleted successfully'];
+                } else {
+                    $response['message'] = 'Failed to delete performance review';
+                }
+                break;
+
             case 'get_employee_details':
                 $employee_id = $_POST['employee_id'] ?? '';
                 if ($employee_id) {
@@ -767,13 +1131,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'education' => getEducationalBackground($employee_id),
                             'seminars' => getSeminars($employee_id),
                             'skills' => getSkills($employee_id),
-                            'work' => getWorkExperience($employee_id)
+                            'work' => getWorkExperience($employee_id),
+                            'documents' => getEmployeeDocuments($employee_id),
+                            'dependents' => getDependents($employee_id),
+                            'salary_history' => getSalaryHistory($employee_id),
+                            'disciplinary' => getDisciplinaryCases($employee_id),
+                            'subordinates' => [], // Placeholder for now
+                            'performance' => getPerformanceReviews($employee_id)
                         ];
                     } else {
                         $response['message'] = 'Employee not found';
                     }
                 } else {
                     $response['message'] = 'Invalid ID';
+                }
+                break;
+
+            case 'save_document':
+                $employee_id = $_POST['employee_id'] ?? '';
+                $doc_id = $_POST['document_id'] ?? null;
+                $doc_data = $_POST;
+
+                // Handle document upload
+                if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
+                    $upload_result = handleFileUpload($_FILES['document_file'], $employee_id, 'document');
+                    if ($upload_result['success']) {
+                        $doc_data['file_path'] = $upload_result['filename'];
+                    } else {
+                        throw new Exception($upload_result['message']);
+                    }
+                } else if (!$doc_id) {
+                     throw new Exception('File is required for new documents');
+                }
+
+                if ($employee_id && saveEmployeeDocument($employee_id, $doc_data, $doc_id)) {
+                    $response = ['success' => true, 'message' => 'Document saved successfully'];
+                } else {
+                    $response['message'] = 'Failed to save document';
+                }
+                break;
+
+            case 'delete_document':
+                $doc_id = $_POST['document_id'] ?? '';
+                $employee_id = $_POST['employee_id'] ?? '';
+                if (!empty($doc_id) && !empty($employee_id) && deleteEmployeeDocument($doc_id, $employee_id)) {
+                    $response = ['success' => true, 'message' => 'Document deleted successfully'];
+                } else {
+                    $response['message'] = 'Failed to delete document';
                 }
                 break;
 
@@ -825,6 +1229,11 @@ if (isset($_GET['edit'])) {
         $seminars = getSeminars($_GET['edit']);
         $skills = getSkills($_GET['edit']);
         $work_experience = getWorkExperience($_GET['edit']);
+        $documents = getEmployeeDocuments($_GET['edit']);
+        $dependents = getDependents($_GET['edit']);
+        $salary_history = getSalaryHistory($_GET['edit']);
+        $disciplinary = getDisciplinaryCases($_GET['edit']);
+        $performance = getPerformanceReviews($_GET['edit']);
     }
 }
 ?>
@@ -1195,7 +1604,7 @@ if (isset($_GET['edit'])) {
 
         <div class="row">
             <!-- Employee List -->
-            <div class="col-lg-8">
+            <div class="col-12">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span>Employee Directory</span>
@@ -1287,614 +1696,389 @@ if (isset($_GET['edit'])) {
                 </div>
             </div>
 
-            <!-- Edit Profile Sidebar -->
-            <div class="col-lg-4">
-                <?php if ($edit_employee): ?>
-                    <!-- Profile Edit Form -->
-                    <div class="card">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <span>Edit Profile</span>
-                            <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-sm btn-outline-secondary">Close</a>
+            <!-- Edit Profile Modal (Previously Sidebar) -->
+            <?php if ($edit_employee): ?>
+            <div class="modal fade" id="editEmployeeModal" tabindex="-1" data-bs-backdrop="static">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title text-primary"><i class="fas fa-user-edit me-2"></i>Edit Profile</h5>
+                            <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn-close"></a>
                         </div>
-                        <div class="card-body">
-                            <form method="POST" enctype="multipart/form-data" id="profileForm">
-                                <input type="hidden" name="action" value="update_profile">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-
-                                <!-- Photo Upload -->
-                                <div class="text-center mb-3">
-                                    <?php if (!empty($edit_employee['photo']) && file_exists(UPLOAD_DIR . $edit_employee['photo'])): ?>
-                                        <img src="<?php echo UPLOAD_DIR . $edit_employee['photo']; ?>" class="employee-photo mb-2" style="width:120px;height:120px;" alt="Photo" id="photoPreview">
-                                    <?php else: ?>
-                                        <div class="photo-placeholder mb-2 d-inline-flex align-items-center justify-content-center" style="width:120px;height:120px;" id="photoPreview">
-                                            <i class="fas fa-user text-muted fa-2x"></i>
-                                        </div>
-                                    <?php endif; ?>
-                                    <div>
-                                        <input type="file" name="photo" id="photoInput" accept="image/*" class="form-control form-control-sm">
-                                        <small class="text-muted">Max 2MB (JPEG, PNG, GIF)</small>
-                                    </div>
-                                </div>
-
-                                <!-- Document Uploads -->
-                                <div class="row g-2 mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Resume</label>
-                                        <?php if (!empty($edit_employee['resume_file'])): ?>
-                                            <div class="d-flex align-items-center">
-                                                <a href="<?php echo UPLOAD_DIR . $edit_employee['resume_file']; ?>" target="_blank" class="btn btn-sm btn-outline-success file-download-btn me-2">
-                                                    <i class="fas fa-download"></i> View
-                                                </a>
-                                                <small><?php echo $edit_employee['resume_file']; ?></small>
-                                            </div>
-                                        <?php endif; ?>
-                                        <input type="file" name="resume_file" class="form-control form-control-sm mt-1" accept=".pdf,.doc,.docx">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Diploma</label>
-                                        <?php if (!empty($edit_employee['diploma_file'])): ?>
-                                            <div class="d-flex align-items-center">
-                                                <a href="<?php echo UPLOAD_DIR . $edit_employee['diploma_file']; ?>" target="_blank" class="btn btn-sm btn-outline-success file-download-btn me-2">
-                                                    <i class="fas fa-download"></i> View
-                                                </a>
-                                                <small><?php echo $edit_employee['diploma_file']; ?></small>
-                                            </div>
-                                        <?php endif; ?>
-                                        <input type="file" name="diploma_file" class="form-control form-control-sm mt-1" accept=".pdf,.doc,.docx,image/*">
-                                    </div>
-                                </div>
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Employee ID</label>
-                                        <input type="text" class="form-control" value="<?php echo htmlspecialchars($edit_employee['employee_id'] ?? 'EMP' . str_pad($edit_employee['id'], 4, '0', STR_PAD_LEFT)); ?>" readonly>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Name *</label>
-                                        <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Email</label>
-                                        <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Phone</label>
-                                        <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label">Address</label>
-                                        <textarea name="address" class="form-control" rows="2"><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
-                                    </div>
-
-                                    <!-- Personal Information -->
-                                    <div class="col-md-6">
-                                        <label class="form-label">Birth Date</label>
-                                        <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Age</label>
-                                        <input type="number" name="age" class="form-control" value="<?php echo htmlspecialchars($edit_employee['age'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Birth Place</label>
-                                        <input type="text" name="birth_place" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_place'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Civil Status</label>
-                                        <select name="civil_status" class="form-select">
-                                            <option value="">Select</option>
-                                            <option value="Single" <?php echo ($edit_employee['civil_status'] ?? '') === 'Single' ? 'selected' : ''; ?>>Single</option>
-                                            <option value="Married" <?php echo ($edit_employee['civil_status'] ?? '') === 'Married' ? 'selected' : ''; ?>>Married</option>
-                                            <option value="Divorced" <?php echo ($edit_employee['civil_status'] ?? '') === 'Divorced' ? 'selected' : ''; ?>>Divorced</option>
-                                            <option value="Widowed" <?php echo ($edit_employee['civil_status'] ?? '') === 'Widowed' ? 'selected' : ''; ?>>Widowed</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Nationality</label>
-                                        <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Religion</label>
-                                        <input type="text" name="religion" class="form-control" value="<?php echo htmlspecialchars($edit_employee['religion'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Gender</label>
-                                        <select name="gender" class="form-select">
-                                            <option value="Male" <?php echo ($edit_employee['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
-                                            <option value="Female" <?php echo ($edit_employee['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- Government IDs -->
-                                    <div class="col-md-6">
-                                        <label class="form-label">SSS No.</label>
-                                        <input type="text" name="sss_no" class="form-control" value="<?php echo htmlspecialchars($edit_employee['sss_no'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">TIN No.</label>
-                                        <input type="text" name="tin_no" class="form-control" value="<?php echo htmlspecialchars($edit_employee['tin_no'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">PhilHealth No.</label>
-                                        <input type="text" name="philhealth_no" class="form-control" value="<?php echo htmlspecialchars($edit_employee['philhealth_no'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Pag-IBIG No.</label>
-                                        <input type="text" name="pagibig_no" class="form-control" value="<?php echo htmlspecialchars($edit_employee['pagibig_no'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Passport No.</label>
-                                        <input type="text" name="passport_no" class="form-control" value="<?php echo htmlspecialchars($edit_employee['passport_no'] ?? ''); ?>">
-                                    </div>
-
-                                    <!-- Employment Details -->
-                                    <div class="col-md-6">
-                                        <label class="form-label">Department</label>
-                                        <select name="department" class="form-select">
-                                            <?php
-                                            foreach ($depts as $dept) {
-                                                $selected = $edit_employee['department'] === $dept ? 'selected' : '';
-                                                echo "<option value=\"$dept\" $selected>$dept</option>";
-                                            }
-                                            ?>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Job Title</label>
-                                        <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title']); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Contract Type</label>
-                                        <select name="contract" class="form-select">
-                                            <option value="Regular" <?php echo ($edit_employee['contract'] ?? '') === 'Regular' ? 'selected' : ''; ?>>Regular</option>
-                                            <option value="Probationary" <?php echo ($edit_employee['contract'] ?? '') === 'Probationary' ? 'selected' : ''; ?>>Probationary</option>
-                                            <option value="Contract" <?php echo ($edit_employee['contract'] ?? '') === 'Contract' ? 'selected' : ''; ?>>Contract</option>
-                                            <option value="Project-Based" <?php echo ($edit_employee['contract'] ?? '') === 'Project-Based' ? 'selected' : ''; ?>>Project-Based</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Salary</label>
-                                        <input type="number" name="salary" class="form-control" value="<?php echo htmlspecialchars($edit_employee['salary'] ?? ''); ?>" step="0.01">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Status</label>
-                                        <select name="status" class="form-select">
-                                            <option value="Active" <?php echo $edit_employee['status'] === 'Active' ? 'selected' : ''; ?>>Active</option>
-                                            <option value="Inactive" <?php echo $edit_employee['status'] === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date Hired</label>
-                                        <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date Regularized</label>
-                                        <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>">
-                                    </div>
-                                </div>
-
-                                <div class="mt-3">
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-save me-1"></i> Update Profile
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Educational Background -->
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            Educational Background
-                        </div>
-                        <div class="card-body">
-                            <?php foreach ($educational_background as $education): ?>
-                                <div class="card mb-2">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($education['level']); ?></strong>
-                                                <br>
-                                                <small><?php echo htmlspecialchars($education['school_name']); ?></small>
-                                                <?php if (!empty($education['course'])): ?>
-                                                    <br><small>Course: <?php echo htmlspecialchars($education['course']); ?></small>
-                                                <?php endif; ?>
-                                                <?php if (!empty($education['year_graduated'])): ?>
-                                                    <br><small>Year: <?php echo htmlspecialchars($education['year_graduated']); ?></small>
-                                                <?php endif; ?>
-                                                <?php if (!empty($education['honors'])): ?>
-                                                    <br><small>Honors: <?php echo htmlspecialchars($education['honors']); ?></small>
-                                                <?php endif; ?>
-                                                <?php if (!empty($education['diploma_file'])): ?>
-                                                    <br>
-                                                    <a href="<?php echo UPLOAD_DIR . $education['diploma_file']; ?>" target="_blank" class="btn btn-sm btn-outline-success file-download-btn mt-1">
-                                                        <i class="fas fa-download"></i> Diploma
-                                                    </a>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-danger delete-education"
-                                                    data-education-id="<?php echo $education['id']; ?>"
-                                                    data-employee-id="<?php echo $edit_employee['id']; ?>">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-
-                            <!-- Add Education Form -->
-                            <form method="POST" enctype="multipart/form-data" id="educationForm" class="mt-3">
-                                <input type="hidden" name="action" value="save_education">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                                <input type="hidden" name="education_id" id="education_id" value="">
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Level *</label>
-                                        <select name="level" class="form-select" required>
-                                            <option value="">Select Level</option>
-                                            <option value="Elementary">Elementary</option>
-                                            <option value="High School">High School</option>
-                                            <option value="College">College</option>
-                                            <option value="Bachelor">Bachelor</option>
-                                            <option value="Master">Master</option>
-                                            <option value="Doctorate">Doctorate</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">School Name *</label>
-                                        <input type="text" name="school_name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Course/Major</label>
-                                        <input type="text" name="course" class="form-control">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Year Graduated</label>
-                                        <input type="number" name="year_graduated" class="form-control" min="1900" max="2030">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Honors/Awards</label>
-                                        <input type="text" name="honors" class="form-control">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Diploma File</label>
-                                        <input type="file" name="diploma_file" class="form-control" accept=".pdf,.doc,.docx,image/*">
-                                    </div>
-                                </div>
-
-                                <div class="mt-2">
-                                    <button type="submit" class="btn btn-success w-100">
-                                        <i class="fas fa-plus me-1"></i> Add Education
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Work Experience -->
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            Work Experience
-                        </div>
-                        <div class="card-body">
-                            <?php foreach ($work_experience as $work): ?>
-                                <div class="card mb-2">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($work['position']); ?></strong>
-                                                <br>
-                                                <small><?php echo htmlspecialchars($work['company_name']); ?></small>
-                                                <br>
-                                                <small>
-                                                    <?php echo htmlspecialchars($work['date_from']); ?> -
-                                                    <?php echo $work['is_current'] ? 'Present' : htmlspecialchars($work['date_to']); ?>
-                                                    <?php if (!empty($work['years_experience'])): ?>
-                                                        <br><small>Years: <?php echo htmlspecialchars($work['years_experience']); ?> years</small>
-                                                    <?php endif; ?>
-                                                </small>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-danger delete-work"
-                                                    data-work-experience-id="<?php echo $work['id']; ?>"
-                                                    data-employee-id="<?php echo $edit_employee['id']; ?>">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-
-                            <!-- Add Work Experience Form -->
-                            <form method="POST" id="workForm" class="mt-3">
-                                <input type="hidden" name="action" value="save_work_experience">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                                <input type="hidden" name="work_id" id="work_id" value="">
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Company Name *</label>
-                                        <input type="text" name="company_name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Position *</label>
-                                        <input type="text" name="position" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date From *</label>
-                                        <input type="date" name="date_from" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date To</label>
-                                        <input type="date" name="date_to" class="form-control">
-                                        <div class="form-check mt-1">
-                                            <input type="checkbox" name="is_current" value="1" class="form-check-input" id="is_current">
-                                            <label class="form-check-label" for="is_current">Currently working here</label>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Years of Experience</label>
-                                        <input type="number" name="years_experience" class="form-control" min="0" max="50">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Reference Name</label>
-                                        <input type="text" name="reference_name" class="form-control">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Reference Contact</label>
-                                        <input type="text" name="reference_contact" class="form-control">
-                                    </div>
-                                </div>
-
-                                <div class="mt-2">
-                                    <button type="submit" class="btn btn-success w-100">
-                                        <i class="fas fa-plus me-1"></i> Add Work Experience
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Skills -->
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            Skills
-                        </div>
-                        <div class="card-body">
-                            <?php foreach ($skills as $skill): ?>
-                                <div class="card mb-2">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($skill['skill_name']); ?></strong>
-                                                <br>
-                                                <small>Proficiency: <?php echo htmlspecialchars($skill['proficiency_level']); ?></small>
-                                                <?php if (!empty($skill['certification'])): ?>
-                                                    <br>
-                                                    <a href="<?php echo UPLOAD_DIR . $skill['certification']; ?>" target="_blank" class="btn btn-sm btn-outline-success file-download-btn mt-1">
-                                                        <i class="fas fa-download"></i> Certificate
-                                                    </a>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-danger delete-skill"
-                                                    data-skill-id="<?php echo $skill['id']; ?>"
-                                                    data-employee-id="<?php echo $edit_employee['id']; ?>">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-
-                            <!-- Add Skill Form -->
-                            <form method="POST" enctype="multipart/form-data" id="skillForm" class="mt-3">
-                                <input type="hidden" name="action" value="save_skill">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                                <input type="hidden" name="skill_id" id="skill_id" value="">
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Skill Name *</label>
-                                        <input type="text" name="skill_name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Proficiency Level</label>
-                                        <select name="proficiency_level" class="form-select">
-                                            <option value="Beginner">Beginner</option>
-                                            <option value="Intermediate">Intermediate</option>
-                                            <option value="Advanced">Advanced</option>
-                                            <option value="Expert">Expert</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Certification File</label>
-                                        <input type="file" name="certification" class="form-control" accept=".pdf,.doc,.docx,image/*">
-                                    </div>
-                                </div>
-
-                                <div class="mt-2">
-                                    <button type="submit" class="btn btn-success w-100">
-                                        <i class="fas fa-plus me-1"></i> Add Skill
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Seminars & Trainings -->
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            Seminars & Trainings
-                        </div>
-                        <div class="card-body">
-                            <?php foreach ($seminars as $seminar): ?>
-                                <div class="card mb-2">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($seminar['seminar_name']); ?></strong>
-                                                <br>
-                                                <small>Organizer: <?php echo htmlspecialchars($seminar['organizer']); ?></small>
-                                                <br>
-                                                <small>
-                                                    <?php echo htmlspecialchars($seminar['date_from']); ?> -
-                                                    <?php echo htmlspecialchars($seminar['date_to']); ?>
-                                                    <?php if (!empty($seminar['hours'])): ?>
-                                                        (<?php echo htmlspecialchars($seminar['hours']); ?> hours)
-                                                    <?php endif; ?>
-                                                </small>
-                                                <?php if (!empty($seminar['certificate'])): ?>
-                                                    <br>
-                                                    <a href="<?php echo UPLOAD_DIR . $seminar['certificate']; ?>" target="_blank" class="btn btn-sm btn-outline-success file-download-btn mt-1">
-                                                        <i class="fas fa-download"></i> Certificate
-                                                    </a>
-                                                <?php endif; ?>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-danger delete-seminar"
-                                                    data-seminar-id="<?php echo $seminar['id']; ?>"
-                                                    data-employee-id="<?php echo $edit_employee['id']; ?>">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-
-                            <!-- Add Seminar Form -->
-                            <form method="POST" enctype="multipart/form-data" id="seminarForm" class="mt-3">
-                                <input type="hidden" name="action" value="save_seminar">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                                <input type="hidden" name="seminar_id" id="seminar_id" value="">
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Seminar Name *</label>
-                                        <input type="text" name="seminar_name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Organizer *</label>
-                                        <input type="text" name="organizer" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date From *</label>
-                                        <input type="date" name="date_from" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Date To *</label>
-                                        <input type="date" name="date_to" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Hours</label>
-                                        <input type="number" name="hours" class="form-control" min="1">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Certificate</label>
-                                        <input type="file" name="certificate" class="form-control" accept=".pdf,.doc,.docx,image/*">
-                                    </div>
-                                </div>
-
-                                <div class="mt-2">
-                                    <button type="submit" class="btn btn-success w-100">
-                                        <i class="fas fa-plus me-1"></i> Add Seminar
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- Emergency Contacts -->
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            Emergency Contacts
-                        </div>
-                        <div class="card-body">
-                            <?php foreach ($emergency_contacts as $contact): ?>
-                                <div class="card emergency-contact-card <?php echo $contact['is_primary'] ? 'primary-contact' : ''; ?> mb-2">
-                                    <div class="card-body py-2">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <strong><?php echo htmlspecialchars($contact['contact_name']); ?></strong>
-                                                <small class="text-muted">(<?php echo htmlspecialchars($contact['relationship']); ?>)</small>
-                                                <?php if ($contact['is_primary']): ?>
-                                                    <span class="badge bg-success ms-1">Primary</span>
-                                                <?php endif; ?>
-                                                <br>
-                                                <small><?php echo htmlspecialchars($contact['phone']); ?></small>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-danger delete-contact"
-                                                    data-contact-id="<?php echo $contact['id']; ?>"
-                                                    data-employee-id="<?php echo $edit_employee['id']; ?>">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-
-                            <!-- Add Contact Form -->
-                            <form method="POST" id="contactForm" class="mt-3">
-                                <input type="hidden" name="action" value="save_contact">
-                                <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                                <input type="hidden" name="contact_id" id="contact_id" value="">
-
-                                <div class="row g-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Contact Name *</label>
-                                        <input type="text" name="contact_name" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Relationship *</label>
-                                        <input type="text" name="relationship" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Phone *</label>
-                                        <input type="text" name="phone" class="form-control" required>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Email</label>
-                                        <input type="email" name="email" class="form-control">
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label">Address</label>
-                                        <textarea name="address" class="form-control" rows="2"></textarea>
-                                    </div>
-                                    <div class="col-12">
-                                        <div class="form-check">
-                                            <input type="checkbox" name="is_primary" value="1" class="form-check-input" id="is_primary_contact">
-                                            <label class="form-check-label" for="is_primary_contact">Set as primary contact</label>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="mt-2">
-                                    <button type="submit" class="btn btn-success w-100">
-                                        <i class="fas fa-plus me-1"></i> Add Contact
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
+                        <div class="modal-body p-0">
+                            <div class="card shadow-none border-0">
+        
+        <!-- Profile Header -->
+        <div class="card-body bg-light border-bottom text-center py-4">
+            <div class="position-relative d-inline-block mb-3">
+                <?php if (!empty($edit_employee['photo']) && file_exists(UPLOAD_DIR . $edit_employee['photo'])): ?>
+                    <img src="<?php echo UPLOAD_DIR . $edit_employee['photo']; ?>" class="rounded-circle shadow-sm border border-3 border-white" style="width: 100px; height: 100px; object-fit: cover;">
                 <?php else: ?>
-                    <!-- Welcome Card -->
-                    <div class="card">
-                        <div class="card-body text-center py-5">
-                            <i class="fas fa-users fa-3x text-muted mb-3"></i>
-                            <h5>Employee Profiles</h5>
-                            <p class="text-muted">Select an employee from the list to view and edit their profile information.</p>
-                        </div>
+                    <div class="rounded-circle shadow-sm border border-3 border-white bg-white d-flex align-items-center justify-content-center mx-auto" style="width: 100px; height: 100px;">
+                        <i class="fas fa-user fa-3x text-secondary"></i>
                     </div>
                 <?php endif; ?>
+                <span class="position-absolute bottom-0 end-0 badge rounded-pill bg-<?php echo $edit_employee['status'] === 'Active' ? 'success' : 'secondary'; ?> border border-white">
+                    <?php echo $edit_employee['status']; ?>
+                </span>
             </div>
+            <h5 class="mb-1 fw-bold"><?php echo htmlspecialchars($edit_employee['name']); ?></h5>
+            <p class="text-muted mb-0 small"><?php echo htmlspecialchars($edit_employee['job_title']); ?> | <?php echo htmlspecialchars($edit_employee['department']); ?></p>
+            <p class="text-muted small mb-0 font-monospace"><?php echo htmlspecialchars($edit_employee['employee_id'] ?? 'EMP' . str_pad($edit_employee['id'], 4, '0', STR_PAD_LEFT)); ?></p>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="card-header bg-white p-0 border-bottom-0">
+            <ul class="nav nav-tabs nav-fill card-header-tabs m-0" id="editTabs" role="tablist">
+                <li class="nav-item"><button class="nav-link active border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_personal" data-bs-toggle="tab"><i class="fas fa-id-card me-2"></i>Personal</button></li>
+                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_employment" data-bs-toggle="tab"><i class="fas fa-briefcase me-2"></i>Employ.</button></li>
+                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_compensation" data-bs-toggle="tab"><i class="fas fa-money-bill-wave me-2"></i>Compens.</button></li>
+                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_docs" data-bs-toggle="tab"><i class="fas fa-folder-open me-2"></i>201 Files</button></li>
+            </ul>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="tab-content">
+                <!-- PERSONAL TAB -->
+                <div class="tab-pane fade show active" id="tab_personal">
+                    <div class="p-4">
+                        <form method="POST" enctype="multipart/form-data" id="profileForm">
+                            <input type="hidden" name="action" value="update_profile">
+                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                            
+                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Basic Information</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-12">
+                                    <label class="form-label small">Full Name</label>
+                                    <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Date of Birth</label>
+                                    <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Gender</label>
+                                    <select name="gender" class="form-select">
+                                        <option value="Male" <?php echo ($edit_employee['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
+                                        <option value="Female" <?php echo ($edit_employee['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Civil Status</label>
+                                    <select name="civil_status" class="form-select">
+                                        <option value="Single" <?php echo ($edit_employee['civil_status'] ?? '') === 'Single' ? 'selected' : ''; ?>>Single</option>
+                                        <option value="Married" <?php echo ($edit_employee['civil_status'] ?? '') === 'Married' ? 'selected' : ''; ?>>Married</option>
+                                        <option value="Widowed" <?php echo ($edit_employee['civil_status'] ?? '') === 'Widowed' ? 'selected' : ''; ?>>Widowed</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Nationality</label>
+                                    <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small">Photo</label>
+                                    <input type="file" name="photo" class="form-control" accept="image/*">
+                                </div>
+                            </div>
+                            
+                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Contact Details</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <label class="form-label small">Email</label>
+                                    <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Phone</label>
+                                    <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small">Address</label>
+                                    <textarea name="address" class="form-control" rows="2"><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                        </form>
+                        
+                        <hr class="my-4">
+                        
+                        <!-- Dependents Section -->
+                        <h6 class="text-uppercase text-secondary small fw-bold mb-3 d-flex justify-content-between align-items-center">
+                            Dependents
+                        </h6>
+                        <div class="list-group mb-3">
+                            <?php foreach ($dependents as $dep): ?>
+                                <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                                    <div>
+                                        <strong><?php echo htmlspecialchars($dep['name']); ?></strong>
+                                        <small class="text-muted d-block"><?php echo htmlspecialchars($dep['relationship']); ?> | <?php echo htmlspecialchars($dep['birth_date']); ?></small>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger delete-dependent" data-dependent-id="<?php echo $dep['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <form method="POST" id="dependentForm" class="card bg-light border-0 p-3">
+                            <input type="hidden" name="action" value="save_dependent">
+                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                            <div class="row g-2">
+                                <div class="col-6"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name" required></div>
+                                <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
+                                <div class="col-6"><input type="date" name="birth_date" class="form-control form-control-sm"></div>
+                                <div class="col-6"><input type="text" name="contact_number" class="form-control form-control-sm" placeholder="Contact #"></div>
+                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Dependent</button></div>
+                            </div>
+                        </form>
+                        
+                         <hr class="my-4">
+
+                        <!-- Emergency Contacts -->
+                         <h6 class="text-uppercase text-secondary small fw-bold mb-3">Emergency Contacts</h6>
+                        <div class="list-group mb-3">
+                            <?php foreach ($emergency_contacts as $contact): ?>
+                                <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                                    <div>
+                                        <strong><?php echo htmlspecialchars($contact['contact_name']); ?></strong>
+                                        <span class="badge bg-light text-dark border ms-1"><?php echo htmlspecialchars($contact['relationship']); ?></span>
+                                        <small class="text-muted d-block"><?php echo htmlspecialchars($contact['phone']); ?></small>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-danger delete-contact" data-contact-id="<?php echo $contact['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <form method="POST" id="contactForm" class="card bg-light border-0 p-3">
+                             <input type="hidden" name="action" value="save_contact">
+                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                             <div class="row g-2">
+                                <div class="col-6"><input type="text" name="contact_name" class="form-control form-control-sm" placeholder="Name" required></div>
+                                <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
+                                <div class="col-12"><input type="text" name="phone" class="form-control form-control-sm" placeholder="Phone" required></div>
+                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Emergency Contact</button></div>
+                             </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- EMPLOYMENT TAB -->
+                <div class="tab-pane fade" id="tab_employment">
+                    <div class="p-4">
+                        <form method="POST" id="employmentForm" enctype="multipart/form-data">
+                             <input type="hidden" name="action" value="update_profile">
+                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                             
+                             <h6 class="text-uppercase text-secondary small fw-bold mb-3">Employment Details</h6>
+                             <div class="row g-3 mb-4">
+                                <div class="col-md-6">
+                                    <label class="form-label small">Date Hired</label>
+                                    <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Date Regularized</label>
+                                    <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Status</label>
+                                    <select name="status" class="form-select">
+                                        <option value="Active" <?php echo $edit_employee['status'] === 'Active' ? 'selected' : ''; ?>>Active</option>
+                                        <option value="Inactive" <?php echo $edit_employee['status'] === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Contract Type</label>
+                                    <select name="contract" class="form-select">
+                                        <option value="Regular" <?php echo ($edit_employee['contract'] ?? '') === 'Regular' ? 'selected' : ''; ?>>Regular</option>
+                                        <option value="Probationary" <?php echo ($edit_employee['contract'] ?? '') === 'Probationary' ? 'selected' : ''; ?>>Probationary</option>
+                                        <option value="Contract" <?php echo ($edit_employee['contract'] ?? '') === 'Contract' ? 'selected' : ''; ?>>Contract</option>
+                                        <option value="Project-Based" <?php echo ($edit_employee['contract'] ?? '') === 'Project-Based' ? 'selected' : ''; ?>>Project-Based</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Department</label>
+                                    <input type="text" name="department" class="form-control" value="<?php echo htmlspecialchars($edit_employee['department']); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Position</label>
+                                    <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title']); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Manager/Supervisor</label>
+                                    <input type="text" name="manager" class="form-control" value="<?php echo htmlspecialchars($edit_employee['manager'] ?? ''); ?>">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Work Schedule</label>
+                                    <input type="text" name="work_schedule" class="form-control" value="<?php echo htmlspecialchars($edit_employee['work_schedule'] ?? ''); ?>">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small">Job Description</label>
+                                    <textarea name="job_description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_employee['job_description'] ?? ''); ?></textarea>
+                                </div>
+                             </div>
+                             
+                             <h6 class="text-uppercase text-secondary small fw-bold mb-3">Files</h6>
+                             <div class="mb-3">
+                                 <label class="form-label small">Resume</label>
+                                 <input type="file" name="resume_file" class="form-control form-control-sm">
+                                 <?php if (!empty($edit_employee['resume_file'])): ?>
+                                     <small><a href="<?php echo UPLOAD_DIR . $edit_employee['resume_file']; ?>" target="_blank">View Current</a></small>
+                                 <?php endif; ?>
+                             </div>
+                             
+                             <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                        </form>
+                        
+                        <hr class="my-4">
+                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">Work History</h6>
+                        <div class="list-group mb-3">
+                            <?php foreach ($work_experience as $work): ?>
+                                <div class="list-group-item p-3">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1"><?php echo htmlspecialchars($work['position']); ?></h6>
+                                            <small class="text-muted d-block"><?php echo htmlspecialchars($work['company_name']); ?></small>
+                                            <small class="text-muted"><?php echo htmlspecialchars($work['date_from']); ?> - <?php echo $work['is_current'] ? 'Present' : htmlspecialchars($work['date_to']); ?></small>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-danger delete-work" data-work-id="<?php echo $work['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <form method="POST" id="workForm" class="card bg-light border-0 p-3">
+                             <input type="hidden" name="action" value="save_work_experience">
+                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                             <div class="row g-2">
+                                <div class="col-6"><input type="text" name="company_name" class="form-control form-control-sm" placeholder="Company" required></div>
+                                <div class="col-6"><input type="text" name="position" class="form-control form-control-sm" placeholder="Position" required></div>
+                                <div class="col-6"><input type="date" name="date_from" class="form-control form-control-sm" required></div>
+                                <div class="col-6"><input type="date" name="date_to" class="form-control form-control-sm"></div>
+                                <div class="col-12"><div class="form-check"><input type="checkbox" name="is_current" value="1" class="form-check-input" id="is_current"><label class="form-check-label small" for="is_current">Current Job</label></div></div>
+                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add History</button></div>
+                             </div>
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- COMPENSATION TAB -->
+                <div class="tab-pane fade" id="tab_compensation">
+                    <div class="p-4">
+                        <form method="POST" id="compForm">
+                            <input type="hidden" name="action" value="update_profile">
+                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                            
+                            <div class="alert alert-info py-2 small mb-3">
+                                <i class="fas fa-info-circle me-1"></i> Compensation details are managed in the Compensation Module or provided via verified 201 file documents.
+                            </div>
+
+                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Comp & Ben</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small">Basic Salary</label>
+                                    <input type="text" name="salary" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['salary']); ?>" readonly>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Pay Grade</label>
+                                    <input type="text" name="pay_grade" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['pay_grade'] ?? ''); ?>" readonly>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Bank Name</label>
+                                    <input type="text" name="bank_name" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_name'] ?? ''); ?>" readonly>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">Account No.</label>
+                                    <input type="text" name="bank_account_no" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_account_no'] ?? ''); ?>" readonly>
+                                </div>
+                            </div>
+                            
+                            <h6 class="text-uppercase text-secondary small fw-bold mt-4 mb-3">Government IDs</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6"><label class="form-label small">SSS</label><input type="text" name="sss_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['sss_no'] ?? ''); ?>" readonly></div>
+                                <div class="col-md-6"><label class="form-label small">PhilHealth</label><input type="text" name="philhealth_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['philhealth_no'] ?? ''); ?>" readonly></div>
+                                <div class="col-md-6"><label class="form-label small">Pag-IBIG</label><input type="text" name="pagibig_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['pagibig_no'] ?? ''); ?>" readonly></div>
+                                <div class="col-md-6"><label class="form-label small">TIN</label><input type="text" name="tin_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['tin_no'] ?? ''); ?>" readonly></div>
+                            </div>
+                            
+                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">HMO / Benefits</h6>
+                            <div class="row g-3 mb-4">
+                                <div class="col-md-6"><label class="form-label small">HMO Provider</label><input type="text" name="hmo_provider" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_provider'] ?? ''); ?>" readonly></div>
+                                <div class="col-md-6"><label class="form-label small">HMO Number</label><input type="text" name="hmo_number" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_number'] ?? ''); ?>" readonly></div>
+                            </div>
+                        </form>
+                        
+                        <hr class="my-4">
+                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">Salary History</h6>
+                        <div class="list-group mb-3">
+                             <?php foreach ($salary_history as $hist): ?>
+                                <div class="list-group-item d-flex justify-content-between align-items-center p-2">
+                                    <div>
+                                        <strong><?php echo number_format($hist['amount'], 2); ?></strong>
+                                        <small class="text-muted d-block"><?php echo htmlspecialchars($hist['type']); ?> | <?php echo htmlspecialchars($hist['effective_date']); ?></small>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <!-- 201 FILES TAB -->
+                <div class="tab-pane fade" id="tab_docs">
+                    <div class="p-4">
+                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">201 Files & Certificates</h6>
+                        <div class="list-group mb-3">
+                            <?php foreach ($documents as $doc): ?>
+                                <div class="list-group-item p-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div class="d-flex align-items-center">
+                                            <div class="me-3 text-secondary"><i class="fas fa-file-alt fa-2x"></i></div>
+                                            <div>
+                                                <h6 class="mb-0"><?php echo htmlspecialchars($doc['document_name']); ?></h6>
+                                                <small class="text-muted"><?php echo htmlspecialchars($doc['document_type']); ?> | <?php echo date('M d, Y', strtotime($doc['upload_date'])); ?></small>
+                                            </div>
+                                        </div>
+                                        <div class="btn-group">
+                                            <a href="<?php echo UPLOAD_DIR . $doc['file_path']; ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
+                                            <button class="btn btn-sm btn-outline-danger delete-document" data-document-id="<?php echo $doc['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        
+
+
+                        <form method="POST" enctype="multipart/form-data" id="documentForm" class="card bg-light border-0 p-3">
+                            <input type="hidden" name="action" value="save_document">
+                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                            <div class="row g-2">
+                                <div class="col-12"><input type="text" name="document_name" class="form-control form-control-sm" placeholder="Document Name" required></div>
+                                <div class="col-12">
+                                    <select name="document_type" class="form-select form-select-sm" required>
+                                        <option value="" selected disabled>Select Type...</option>
+                                        <option value="Resume/CV">Resume/CV</option>
+                                        <option value="Application Form">Application Form</option>
+                                        <option value="Contract">Contract</option>
+                                        <option value="Job Offer">Job Offer</option>
+                                        <option value="Certificate">Certificate</option>
+                                        <option value="Memo">Memo</option>
+                                        <option value="Evaluation">Evaluation</option>
+                                        <option value="Medical">Medical Result</option>
+                                        <option value="Clearance">Clearance</option>
+                                        <option value="Resignation">Resignation Letter</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="col-12"><input type="file" name="document_file" class="form-control form-control-sm" required></div>
+                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Upload Document</button></div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1915,21 +2099,24 @@ if (isset($_GET['edit'])) {
                             <span class="badge" id="view_status"></span>
                         </div>
                         <div class="col-md-8">
-                            <ul class="nav nav-tabs" id="viewTabs" role="tablist">
-                                <li class="nav-item">
-                                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab_personal" type="button">Personal</button>
-                                </li>
-                                <li class="nav-item">
-                                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab_employment" type="button">Employment</button>
-                                </li>
-                                <li class="nav-item">
-                                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab_other" type="button">Background</button>
-                                </li>
-                            </ul>
-                            <div class="tab-content p-3 border border-top-0 rounded-bottom">
-                                <div class="tab-pane fade show active" id="tab_personal"></div>
-                                <div class="tab-pane fade" id="tab_employment"></div>
-                                <div class="tab-pane fade" id="tab_other"></div>
+                            <div class="p-3 border rounded">
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-id-card me-2"></i>Personal Information</h6>
+                                <div id="view_personal" class="mb-4"></div>
+
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-briefcase me-2"></i>Employment Details</h6>
+                                <div id="view_employment" class="mb-4"></div>
+
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-money-bill-wave me-2"></i>Compensation & Benefits</h6>
+                                <div id="view_compensation" class="mb-4"></div>
+
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-chart-line me-2"></i>Performance & Records</h6>
+                                <div id="view_performance" class="mb-4"></div>
+
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-history me-2"></i>History & Qualifications</h6>
+                                <div id="view_other" class="mb-4"></div>
+
+                                <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-folder-open me-2"></i>201 Files</h6>
+                                <div id="view_documents"></div>
                             </div>
                         </div>
                     </div>
@@ -1961,6 +2148,9 @@ if (isset($_GET['edit'])) {
                 }
             }, 5000);
         }
+        
+        // ... (Rest of existing scripts) ...
+
 
         // Photo preview
         function setupPhotoPreview() {
@@ -2051,58 +2241,176 @@ if (isset($_GET['edit'])) {
             statusBadge.innerText = emp.status;
             statusBadge.className = `badge ${emp.status === 'Active' ? 'bg-success' : 'bg-secondary'}`;
             
-            // Personal
-            const personalHtml = `
-                <div class="row g-2">
+            // --- PERSONAL INFORMATION ---
+            let personalHtml = `
+                <div class="row g-2 mb-3">
                     <div class="col-6"><small class="text-muted">Email</small><br>${emp.email || '-'}</div>
                     <div class="col-6"><small class="text-muted">Phone</small><br>${emp.phone || '-'}</div>
                     <div class="col-6"><small class="text-muted">Birth Date</small><br>${emp.birth_date || '-'}</div>
                     <div class="col-6"><small class="text-muted">Age</small><br>${emp.age || '-'}</div>
                     <div class="col-6"><small class="text-muted">Gender</small><br>${emp.gender || '-'}</div>
                     <div class="col-6"><small class="text-muted">Civil Status</small><br>${emp.civil_status || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Nationality</small><br>${emp.nationality || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Religion</small><br>${emp.religion || '-'}</div>
                     <div class="col-12"><small class="text-muted">Address</small><br>${emp.address || '-'}</div>
                 </div>
             `;
-            document.getElementById('tab_personal').innerHTML = personalHtml;
             
-            // Employment
+            // Emergency Contacts
+            if (data.contacts && data.contacts.length > 0) {
+                personalHtml += '<h6 class="small fw-bold text-secondary mt-3">Emergency Contacts</h6><ul class="list-group list-group-flush small">';
+                data.contacts.forEach(c => {
+                    personalHtml += `<li class="list-group-item px-0 py-1">
+                        <strong>${c.contact_name}</strong> (${c.relationship}) - ${c.phone}
+                    </li>`;
+                });
+                personalHtml += '</ul>';
+            }
+
+            // Dependents
+            if (data.dependents && data.dependents.length > 0) {
+                personalHtml += '<h6 class="small fw-bold text-secondary mt-3">Dependents</h6><ul class="list-group list-group-flush small">';
+                data.dependents.forEach(d => {
+                    personalHtml += `<li class="list-group-item px-0 py-1">
+                        <strong>${d.name}</strong> (${d.relationship}) - DOB: ${d.birth_date || 'N/A'}
+                    </li>`;
+                });
+                personalHtml += '</ul>';
+            }
+            document.getElementById('view_personal').innerHTML = personalHtml;
+
+            // --- EMPLOYMENT DETAILS ---
              const employmentHtml = `
                 <div class="row g-2">
                     <div class="col-6"><small class="text-muted">Department</small><br>${emp.department || '-'}</div>
                     <div class="col-6"><small class="text-muted">Position</small><br>${emp.job_title || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Manager/Supervisor</small><br>${emp.manager || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Work Schedule</small><br>${emp.work_schedule || '-'}</div>
                     <div class="col-6"><small class="text-muted">Date Hired</small><br>${emp.date_hired || '-'}</div>
-                    <div class="col-6"><small class="text-muted">Emp. Status</small><br>${emp.employment_status || '-'}</div>
-                    <div class="col-6"><small class="text-muted">Salary</small><br>${emp.salary || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Date Regularized</small><br>${emp.date_regularized || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Emp. Status</small><br>${emp.status || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Contract Type</small><br>${emp.contract || '-'}</div>
+                    <div class="col-12 mt-2"><small class="text-muted">Job Description</small><p class="small mb-0 text-break">${emp.job_description || '-'}</p></div>
+                </div>
+            `;
+            document.getElementById('view_employment').innerHTML = employmentHtml;
+
+            // --- COMPENSATION & BENEFITS ---
+            let compHtml = `
+                 <div class="row g-2 mb-3">
+                    <div class="col-6"><small class="text-muted">Basic Salary</small><br>${emp.salary ? parseFloat(emp.salary).toLocaleString('en-US', {style:'currency', currency:'PHP'}) : '-'}</div>
+                    <div class="col-6"><small class="text-muted">Pay Grade</small><br>${emp.pay_grade || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Bank Name</small><br>${emp.bank_name || '-'}</div>
+                    <div class="col-6"><small class="text-muted">Account No.</small><br>${emp.bank_account_no || '-'}</div>
+                 </div>
+                 <h6 class="small fw-bold text-secondary mt-3">Government IDs</h6>
+                 <div class="row g-2 mb-3">
                     <div class="col-6"><small class="text-muted">SSS</small><br>${emp.sss_no || '-'}</div>
                     <div class="col-6"><small class="text-muted">TIN</small><br>${emp.tin_no || '-'}</div>
                     <div class="col-6"><small class="text-muted">PhilHealth</small><br>${emp.philhealth_no || '-'}</div>
-                </div>
+                    <div class="col-6"><small class="text-muted">Pag-IBIG</small><br>${emp.pagibig_no || '-'}</div>
+                 </div>
+                 <h6 class="small fw-bold text-secondary mt-3">Benefits</h6>
+                 <div class="row g-2 mb-3">
+                    <div class="col-6"><small class="text-muted">HMO Provider</small><br>${emp.hmo_provider || '-'}</div>
+                    <div class="col-6"><small class="text-muted">HMO Number</small><br>${emp.hmo_number || '-'}</div>
+                    <div class="col-6"><small class="text-muted">VL Credits</small><br>${emp.leave_credits_vacation || '0'}</div>
+                    <div class="col-6"><small class="text-muted">SL Credits</small><br>${emp.leave_credits_sick || '0'}</div>
+                 </div>
             `;
-            document.getElementById('tab_employment').innerHTML = employmentHtml;
+            
+            if (data.salary_history && data.salary_history.length > 0) {
+                 compHtml += '<h6 class="small fw-bold text-secondary mt-3">Salary History</h6><table class="table table-sm table-bordered small"><thead><tr><th>Date</th><th>Amount</th><th>Type</th></tr></thead><tbody>';
+                 data.salary_history.forEach(h => {
+                     compHtml += `<tr>
+                        <td>${h.effective_date}</td>
+                        <td>${parseFloat(h.amount).toLocaleString('en-US', {style:'currency', currency:'PHP'})}</td>
+                        <td>${h.type}</td>
+                     </tr>`;
+                 });
+                 compHtml += '</tbody></table>';
+            }
+            document.getElementById('view_compensation').innerHTML = compHtml;
 
-             // Background
-             let otherHtml = '<h6 class="mb-2">Education</h6><ul class="list-group list-group-flush mb-3 small">';
+            // --- PERFORMANCE & RECORDS ---
+            let perfHtml = '';
+            if (data.performance && data.performance.length > 0) {
+                perfHtml += '<h6 class="small fw-bold text-secondary">Performance Reviews</h6><div class="list-group list-group-flush small mb-3">';
+                data.performance.forEach(p => {
+                    perfHtml += `<div class="list-group-item px-0 py-2">
+                        <div class="d-flex justify-content-between"><strong>Rating: ${p.rating}</strong> <span>${p.review_date}</span></div>
+                        <div class="fst-italic text-muted">"${p.comments}"</div>
+                    </div>`;
+                });
+                perfHtml += '</div>';
+            } else { perfHtml += '<p class="small text-muted">No performance reviews recorded.</p>'; }
+
+            if (data.disciplinary && data.disciplinary.length > 0) {
+                perfHtml += '<h6 class="small fw-bold text-danger mt-3">Disciplinary Cases</h6><div class="list-group list-group-flush small">';
+                data.disciplinary.forEach(c => {
+                    perfHtml += `<div class="list-group-item px-0 py-2 border-start border-danger border-3 bg-light">
+                        <div class="d-flex justify-content-between"><strong class="text-danger">${c.violation}</strong> <span>${c.date_reported}</span></div>
+                        <div>Status: ${c.status} | Action: ${c.action_taken}</div>
+                    </div>`;
+                });
+                perfHtml += '</div>';
+            } else { perfHtml += '<p class="small text-muted">No disciplinary cases recorded.</p>'; }
+            document.getElementById('view_performance').innerHTML = perfHtml;
+
+             // --- HISTORY & QUALIFICATIONS ---
+             let otherHtml = '<h6 class="small fw-bold text-secondary">Education</h6><ul class="list-group list-group-flush mb-3 small">';
              if(data.education && data.education.length > 0) {
                  data.education.forEach(edu => {
-                     otherHtml += `<li class="list-group-item px-0">
+                     otherHtml += `<li class="list-group-item px-0 py-1">
                         <strong>${edu.school_name}</strong> - ${edu.level}<br>
                         <span class="text-muted">${edu.year_graduated || ''} ${edu.course ? '| ' + edu.course : ''}</span>
                      </li>`;
                  });
-             } else { otherHtml += '<li class="list-group-item px-0 text-muted">No education records</li>'; }
+             } else { otherHtml += '<li class="list-group-item px-0 py-1 text-muted">No education records</li>'; }
              
-             otherHtml += '</ul><h6 class="mb-2">Work Experience</h6><ul class="list-group list-group-flush small">';
+             otherHtml += '</ul><h6 class="small fw-bold text-secondary mt-3">Work Experience</h6><ul class="list-group list-group-flush small">';
              if(data.work && data.work.length > 0) {
                  data.work.forEach(w => {
-                     otherHtml += `<li class="list-group-item px-0">
+                     otherHtml += `<li class="list-group-item px-0 py-1">
                         <strong>${w.position}</strong> at ${w.company_name}<br>
                         <span class="text-muted">${w.date_from} - ${w.is_current ? 'Present' : w.date_to}</span>
                      </li>`;
                  });
-             } else { otherHtml += '<li class="list-group-item px-0 text-muted">No work experience</li>'; }
-             otherHtml += '</ul>';
+             } else { otherHtml += '<li class="list-group-item px-0 py-1 text-muted">No work experience</li>'; }
              
-             document.getElementById('tab_other').innerHTML = otherHtml;
+             otherHtml += '</ul><h6 class="small fw-bold text-secondary mt-3">Seminars & Trainings</h6><ul class="list-group list-group-flush small">';
+             if(data.seminars && data.seminars.length > 0) {
+                 data.seminars.forEach(s => {
+                     otherHtml += `<li class="list-group-item px-0 py-1"><strong>${s.seminar_name}</strong> <span class="text-muted">(${s.date_attended})</span></li>`;
+                 });
+             } else { otherHtml += '<li class="list-group-item px-0 py-1 text-muted">No seminars recorded</li>'; }
+
+             otherHtml += '</ul><h6 class="small fw-bold text-secondary mt-3">Skills</h6><div class="d-flex flex-wrap gap-1">';
+             if(data.skills && data.skills.length > 0) {
+                 data.skills.forEach(s => {
+                     otherHtml += `<span class="badge bg-secondary">${s.skill_name} (${s.proficiency_level})</span>`;
+                 });
+             } else { otherHtml += '<span class="small text-muted">No skills recorded</span>'; }
+             otherHtml += '</div>';
+             
+             document.getElementById('view_other').innerHTML = otherHtml;
+             
+             // Documents (201 Files)
+             let docsHtml = '<div class="list-group list-group-flush small">';
+             if(data.documents && data.documents.length > 0) {
+                 data.documents.forEach(doc => {
+                     docsHtml += `<a href="${UPLOAD_DIR}${doc.file_path}" target="_blank" class="list-group-item list-group-item-action px-0">
+                        <div class="d-flex w-100 justify-content-between">
+                          <h6 class="mb-1">${doc.document_name}</h6>
+                          <small>${doc.document_type}</small>
+                        </div>
+                        <small class="text-muted">Uploaded: ${doc.upload_date}</small>
+                     </a>`;
+                 });
+             } else { docsHtml += '<div class="list-group-item px-0 text-muted">No documents found</div>'; }
+             docsHtml += '</div>';
+             
+             document.getElementById('view_documents').innerHTML = docsHtml;
         }
 
         // Delete confirmation functions
@@ -2158,6 +2466,11 @@ if (isset($_GET['edit'])) {
         setupDeleteHandler('.delete-seminar', 'seminar');
         setupDeleteHandler('.delete-skill', 'skill');
         setupDeleteHandler('.delete-work', 'work_experience');
+        setupDeleteHandler('.delete-dependent', 'dependent');
+        setupDeleteHandler('.delete-salary', 'salary');
+        setupDeleteHandler('.delete-performance', 'performance');
+        setupDeleteHandler('.delete-disciplinary', 'disciplinary');
+        setupDeleteHandler('.delete-document', 'document');
 
         // Form submission with AJAX
         function setupFormHandler(formId) {
@@ -2183,8 +2496,8 @@ if (isset($_GET['edit'])) {
                     .then(data => {
                         if (data.success) {
                             showAlert(data.message, 'success');
-                            // Reset form for add forms (not profile form)
-                            if (formId !== 'profileForm') {
+                            // Reset form for add forms (not profile/update forms)
+                            if (formId !== 'profileForm' && formId !== 'employmentForm' && formId !== 'compForm') {
                                 this.reset();
                                 // Reset hidden ID fields
                                 const idFields = this.querySelectorAll('input[type="hidden"][id$="_id"]');
@@ -2217,6 +2530,13 @@ if (isset($_GET['edit'])) {
         setupFormHandler('seminarForm');
         setupFormHandler('skillForm');
         setupFormHandler('workForm');
+        setupFormHandler('documentForm');
+        setupFormHandler('dependentForm');
+        setupFormHandler('employmentForm');
+        setupFormHandler('compForm');
+        setupFormHandler('salaryForm');
+        setupFormHandler('performanceForm');
+        setupFormHandler('disciplinaryForm');
 
         // Handle current job checkbox
         document.getElementById('is_current')?.addEventListener('change', function() {
@@ -2231,7 +2551,7 @@ if (isset($_GET['edit'])) {
 
         // Clear form when adding new items
         document.querySelectorAll('form[id$="Form"]').forEach(form => {
-            if (form.id !== 'profileForm') {
+            if (form.id !== 'profileForm' && form.id !== 'employmentForm' && form.id !== 'compForm') {
                 const clearBtn = document.createElement('button');
                 clearBtn.type = 'button';
                 clearBtn.className = 'btn btn-outline-secondary btn-sm mt-2';
@@ -2248,6 +2568,18 @@ if (isset($_GET['edit'])) {
 
         // Initialize all handlers on page load
         document.addEventListener('DOMContentLoaded', function() {
+            // Auto-open Edit Modal if present
+            const editModalEl = document.getElementById('editEmployeeModal');
+            if (editModalEl) {
+                const editModal = new bootstrap.Modal(editModalEl);
+                editModal.show();
+                
+                // Redirect on close to clear 'edit' param
+                editModalEl.addEventListener('hidden.bs.modal', function () {
+                    window.location.href = window.location.pathname;
+                });
+            }
+
             setupPhotoPreview();
             setupViewButtons();
             
@@ -2256,6 +2588,11 @@ if (isset($_GET['edit'])) {
             setupDeleteHandler('.delete-seminar', 'seminar');
             setupDeleteHandler('.delete-skill', 'skill');
             setupDeleteHandler('.delete-work', 'work_experience');
+            setupDeleteHandler('.delete-dependent', 'dependent');
+            setupDeleteHandler('.delete-salary', 'salary');
+            setupDeleteHandler('.delete-performance', 'performance');
+            setupDeleteHandler('.delete-disciplinary', 'disciplinary');
+            setupDeleteHandler('.delete-document', 'document');
         });
     </script>
 </body>

@@ -1,5 +1,5 @@
 <?php
-ob_start(); // Start output buffering at the VERY beginning
+            ob_start(); // Start output buffering at the VERY beginning
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -78,7 +78,16 @@ $welcomeRole = 'HR ' . ucfirst(str_replace('hr_', '', $userRole));
 
 // Define accessible modules based on role
 $accessibleModules = [];
-if ($userRole === 'hr_manager') {
+if ($userRole === 'admin') {
+    // Full access to all modules for Admin
+    $accessibleModules = [
+        'dashboard' => true,
+        'core_human_capital' => true,
+        'payroll_management' => true,
+        'compensation_planning' => true,
+        'hmo_benefits' => true
+    ];
+} elseif ($userRole === 'hr_manager') {
     // Full access to all modules
     $accessibleModules = [
         'dashboard' => true,
@@ -437,43 +446,99 @@ function getModulePath($basePath, $moduleFile)
             transform: rotate(90deg);
         }
 
-        .theme-toggle-sidebar {
+        /* Sidebar Footer (Profile & Controls) */
+        .sidebar-footer {
+            padding: 1.25rem;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
-            margin: 0.5rem 0;
-            padding: 0.5rem 0;
+            background: rgba(0, 0, 0, 0.2);
+            margin-top: auto; /* Push to bottom */
         }
 
-        .theme-toggle-sidebar a {
+        .user-profile {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 0.6rem 1rem;
-            color: rgba(255, 255, 255, 0.8);
-            text-decoration: none;
-            border-left: 3px solid transparent;
-            font-size: 0.85rem;
+            gap: 12px;
+            margin-bottom: 1rem;
         }
 
-        .theme-toggle-sidebar a:hover {
-            background-color: rgba(255, 255, 255, 0.1);
+        .user-avatar {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, #4e73df, #224abe);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: 700;
             color: white;
-            border-left: 3px solid #f39c12;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.16);
+            border: 2px solid rgba(255,255,255,0.1);
         }
 
-        .logout-link {
-            background-color: #e74a3b;
-            color: white !important;
-            text-align: center;
-            margin: 0.5rem;
-            border-radius: var(--border-radius);
-            padding: 0.8rem;
-            font-weight: 500;
+        .user-details {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .user-name {
             font-size: 0.9rem;
-            transition: background 0.3s;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .logout-link:hover {
-            background-color: #c0392b;
+        .user-role-text {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .footer-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .control-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 0.6rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+
+        .btn-theme {
+            background: rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .btn-theme:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-logout {
+            background: rgba(231, 74, 59, 0.15);
+            color: #ff6b6b;
+            border: 1px solid rgba(231, 74, 59, 0.2);
+        }
+        .btn-logout:hover {
+            background: rgba(231, 74, 59, 0.25);
+            color: #ff4d4d;
+            border-color: rgba(231, 74, 59, 0.5);
+            transform: translateY(-1px);
         }
 
         /* Restricted access styling */
@@ -588,7 +653,7 @@ function getModulePath($basePath, $moduleFile)
                     <i class="fas fa-bars"></i>
                 </button>
                 <div class="header-title">
-                    <span>HR Dashboard</span>
+                    <span>HR 4 system</span>
                     <span class="separator">|</span>
                     <span>Welcome, <?php echo $welcomeRole; ?></span>
                     <span class="separator">|</span>
@@ -604,7 +669,7 @@ function getModulePath($basePath, $moduleFile)
                 <img src="../resources/logo.png" alt="SLATE Logo" onerror="this.style.display='none'">
             </div>
             <div class="system-name">
-                <div>HR ANALYTICS DASHBOARD</div>
+                <div>Human Resources 4 System</div>
                 <div class="sidebar-clock" id="sidebarClock"></div>
             </div>
 
@@ -652,17 +717,9 @@ function getModulePath($basePath, $moduleFile)
                     ?>
                     <a href="<?php echo $contractPath; ?>" class="<?php echo $contractClass; ?>"
                         <?php if ($contractPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-file-contract"></i> Contract Details
+                        <i class="fas fa-file-contract"></i> Contract Managament
                     </a>
 
-                    <?php
-                    $employmentLifePath = getModulePath('../core-human/', 'employment-life.php');
-                    $employmentLifeClass = ($employmentLifePath === '#') ? 'missing-file' : '';
-                    ?>
-                    <a href="<?php echo $employmentLifePath; ?>" class="<?php echo $employmentLifeClass; ?>"
-                        <?php if ($employmentLifePath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-user-clock"></i> Employment Lifecycle
-                    </a>
 
                     <?php
                     $reportPath = getModulePath('../core-human/', 'report.php');
@@ -676,15 +733,55 @@ function getModulePath($basePath, $moduleFile)
             <?php endif; ?>
 
             <?php if (canAccess('payroll_management')): ?>
-                <?php
-                $payrollPath = getModulePath('../payroll/', 'index.php');
-                $payrollClass = (strpos($currentPage, 'payroll') !== false) ? 'active' : '';
-                $payrollClass .= ($payrollPath === '#') ? ' missing-file' : '';
-                ?>
-                <a href="<?php echo $payrollPath; ?>" class="<?php echo $payrollClass; ?>"
-                    <?php if ($payrollPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                    <i class="fas fa-money-bill-wave"></i> Payroll Management
-                </a>
+                <div class="menu-item" onclick="toggleSubmenu('payrollManagement')">
+                    <a href="javascript:void(0)" style="flex: 1;">
+                        <i class="fas fa-money-bill-wave"></i> Payroll Management
+                    </a>
+                    <span class="arrow">›</span>
+                </div>
+                <div class="submenu" id="payrollManagement">
+                    <?php
+                    $payrollCalcPath = getModulePath('../payroll/', 'payroll-calculation.php');
+                    $payrollCalcClass = ($payrollCalcPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $payrollCalcPath; ?>" class="<?php echo $payrollCalcClass; ?>"
+                        <?php if ($payrollCalcPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-calculator"></i> Payroll Calculation
+                    </a>
+
+                    <?php
+                    $payslipGenPath = getModulePath('../payroll/', 'payslip-generator.php');
+                    $payslipGenClass = ($payslipGenPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $payslipGenPath; ?>" class="<?php echo $payslipGenClass; ?>"
+                        <?php if ($payslipGenPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-print"></i> Payslip Generator
+                    </a>
+
+                    <?php
+                    $taxStatPath = getModulePath('../payroll/', 'tax-statutory.php');
+                    $taxStatClass = ($taxStatPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $taxStatPath; ?>" class="<?php echo $taxStatClass; ?>"
+                        <?php if ($taxStatPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-landmark"></i> Tax & Statutory
+                    </a>
+
+                    <?php
+                    $payrollReportPath = getModulePath('../payroll/', 'payroll-reporting.php');
+                    $payrollReportClass = ($payrollReportPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $payrollReportPath; ?>" class="<?php echo $payrollReportClass; ?>"
+                        <?php if ($payrollReportPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-file-invoice-dollar"></i> Reports & Disbursement
+                    </a>
+
+
+
+
+
+
+                </div>
             <?php else: ?>
                 <a href="javascript:void(0)" class="restricted-module" onclick="showAccessDenied()">
                     <i class="fas fa-money-bill-wave"></i> Payroll Management
@@ -709,40 +806,39 @@ function getModulePath($basePath, $moduleFile)
                     </a>
 
                     <?php
-                    $allowancePath = getModulePath('../compensation/', 'allowance-matrix.php');
-                    $allowanceClass = ($allowancePath === '#') ? 'missing-file' : '';
+                    $allowancesPath = getModulePath('../compensation/', 'allowance-salary.php');
+                    $allowancesClass = ($allowancesPath === '#') ? 'missing-file' : '';
                     ?>
-                    <a href="<?php echo $allowancePath; ?>" class="<?php echo $allowanceClass; ?>"
-                        <?php if ($allowancePath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-gifts"></i> Allowance Matrix
+                    <a href="<?php echo $allowancesPath; ?>" class="<?php echo $allowancesClass; ?>"
+                        <?php if ($allowancesPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-coins"></i> Allowances & Salaries
                     </a>
 
                     <?php
-                    $rulesPath = getModulePath('../compensation/', 'compensation-rules.php');
-                    $rulesClass = ($rulesPath === '#') ? 'missing-file' : '';
+                    $compAdjPath = getModulePath('../compensation/', 'compensation-adjustment.php');
+                    $compAdjClass = ($compAdjPath === '#') ? 'missing-file' : '';
                     ?>
-                    <a href="<?php echo $rulesPath; ?>" class="<?php echo $rulesClass; ?>"
-                        <?php if ($rulesPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-book"></i> Compensation Rules
+                    <a href="<?php echo $compAdjPath; ?>" class="<?php echo $compAdjClass; ?>"
+                        <?php if ($compAdjPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-sliders-h"></i> Compensation Adjustment
                     </a>
 
                     <?php
-                    $bonusMovementsPath = getModulePath('../compensation/', 'bonus-and-movements.php');
-                    $bonusMovementsClass = ($bonusMovementsPath === '#') ? 'missing-file' : '';
+                    $incentivesPath = getModulePath('../compensation/', 'incentives-variable.php');
+                    $incentivesClass = ($incentivesPath === '#') ? 'missing-file' : '';
                     ?>
-                    <a href="<?php echo $bonusMovementsPath; ?>" class="<?php echo $bonusMovementsClass; ?>"
-                        <?php if ($bonusMovementsPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-gift"></i> Bonus & Movements
+                    <a href="<?php echo $incentivesPath; ?>" class="<?php echo $incentivesClass; ?>"
+                        <?php if ($incentivesPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-trophy"></i> Incentives & Variables
                     </a>
 
-                    <!-- ADDED: Report Item -->
                     <?php
-                    $compensationReportPath = getModulePath('../compensation/', 'compensation-report.php');
-                    $compensationReportClass = ($compensationReportPath === '#') ? 'missing-file' : '';
+                    $reportPath = getModulePath('../compensation/', 'compensation-report.php');
+                    $reportClass = ($reportPath === '#') ? 'missing-file' : '';
                     ?>
-                    <a href="<?php echo $compensationReportPath; ?>" class="<?php echo $compensationReportClass; ?>"
-                        <?php if ($compensationReportPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-file-alt"></i> Compensation Report
+                    <a href="<?php echo $reportPath; ?>" class="<?php echo $reportClass; ?>"
+                        <?php if ($reportPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-file-invoice-dollar"></i> Compensation Reports
                     </a>
                 </div>
             <?php else: ?>
@@ -752,160 +848,167 @@ function getModulePath($basePath, $moduleFile)
             <?php endif; ?>
 
             <?php if (canAccess('hmo_benefits')): ?>
-                <?php
-                $hmoPath = getModulePath('../hmo-benefits/', 'index.php');
-                $hmoClass = (strpos($currentPage, 'hmo-benefits') !== false) ? 'active' : '';
-                $hmoClass .= ($hmoPath === '#') ? ' missing-file' : '';
-                ?>
-                <a href="<?php echo $hmoPath; ?>" class="<?php echo $hmoClass; ?>"
-                    <?php if ($hmoPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                    <i class="fas fa-heartbeat"></i> HMO and Benefits Administration
-                </a>
+                <div class="menu-item" onclick="toggleSubmenu('hmoBenefits')">
+                    <a href="javascript:void(0)" style="flex: 1;">
+                        <i class="fas fa-heartbeat"></i> HMO and Benefits Administration
+                    </a>
+                    <span class="arrow">›</span>
+                </div>
+                <div class="submenu" id="hmoBenefits">
+                    <?php
+                    $hmoPlanPath = getModulePath('../hmo-benefits/', 'HMO-plan.php');
+                    $hmoPlanClass = ($hmoPlanPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $hmoPlanPath; ?>" class="<?php echo $hmoPlanClass; ?>"
+                        <?php if ($hmoPlanPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-hospital-user"></i> HMO Provider & Plans
+                    </a>
+
+                    <?php
+                    $retirementPath = getModulePath('../hmo-benefits/', 'retirement-longterm.php');
+                    $retirementClass = ($retirementPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $retirementPath; ?>" class="<?php echo $retirementClass; ?>"
+                        <?php if ($retirementPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-piggy-bank"></i> Retirement & Long-Term
+                    </a>
+
+                    <?php
+                    $leaveWelfarePath = getModulePath('../hmo-benefits/', 'leave-welfare.php');
+                    $leaveWelfareClass = ($leaveWelfarePath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $leaveWelfarePath; ?>" class="<?php echo $leaveWelfareClass; ?>"
+                        <?php if ($leaveWelfarePath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-umbrella-beach"></i> Leave & Welfare
+                    </a>
+
+                    <?php
+                    $benefitsRecordsPath = getModulePath('../hmo-benefits/', 'benefits-eligibility.php');
+                    $benefitsRecordsClass = ($benefitsRecordsPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $benefitsRecordsPath; ?>" class="<?php echo $benefitsRecordsClass; ?>"
+                        <?php if ($benefitsRecordsPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-file-contract"></i> Eligibility & Records
+                    </a>
+
+                    <?php
+                    $hmoProviderCoorPath = getModulePath('../hmo-benefits/', 'benefits-provider-coor.php');
+                    $hmoProviderCoorClass = ($hmoProviderCoorPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $hmoProviderCoorPath; ?>" class="<?php echo $hmoProviderCoorClass; ?>"
+                        <?php if ($hmoProviderCoorPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-handshake"></i> Renewal & Coordination
+                    </a>
+
+                </div>
             <?php else: ?>
                 <a href="javascript:void(0)" class="restricted-module" onclick="showAccessDenied()">
-                    <i class="fas fa-heartbeat"></i> HMO and Benefits Administration
+                    <i class="fas fa-heartbeat"></i> Benefits Administration
                 </a>
             <?php endif; ?>
 
-            <div class="theme-toggle-sidebar">
-                <a href="?toggle_theme=1" id="sidebarThemeToggle">
-                    <i class="fas fa-<?php echo $currentTheme === 'light' ? 'moon' : 'sun'; ?>"></i>
-                    <span>Switch to <?php echo $currentTheme === 'light' ? 'Dark' : 'Light'; ?> Mode</span>
+            <!-- AI Intelligence Section -->
+            <div class="menu-item" onclick="toggleSubmenu('aiIntelligence')">
+                <a href="javascript:void(0)" style="flex: 1;">
+                    <i class="fas fa-brain"></i> Artificial Intelligence
+                </a>
+                <span class="arrow">›</span>
+            </div>
+            <div class="submenu" id="aiIntelligence">
+
+
+                <?php
+                $aiPredictPath = getModulePath('../ai/', 'ai.php');
+                $aiPredictClass = ($aiPredictPath === '#') ? 'missing-file' : '';
+                ?>
+                <a href="<?php echo $aiPredictPath; ?>" class="<?php echo $aiPredictClass; ?>"
+                    <?php if ($aiPredictPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                    <i class="fas fa-chart-line"></i> Predictive Analytics
+                </a>
+
+                <?php
+                $aiAssistantPath = getModulePath('../ai/', 'ai_assistant.php');
+                $aiAssistantClass = ($aiAssistantPath === '#') ? 'missing-file' : '';
+                ?>
+                <a href="<?php echo $aiAssistantPath; ?>" class="<?php echo $aiAssistantClass; ?>"
+                    <?php if ($aiAssistantPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                    <i class="fas fa-robot"></i> AI Assistant
+                </a>
+
+
+            </div>
+
+            <?php if ($userRole === 'hr_manager'): ?>
+                <div class="menu-item" onclick="toggleSubmenu('adminTools')">
+                    <a href="javascript:void(0)" style="flex: 1;">
+                        <i class="fas fa-cogs"></i> System Administration
+                    </a>
+                    <span class="arrow">›</span>
+                </div>
+                <div class="submenu" id="adminTools">
+                    <?php
+                    $loginLogsPath = getModulePath('../admin/', 'login-logs.php');
+                    $loginLogsClass = ($loginLogsPath === '#') ? 'missing-file' : '';
+                    ?>
+                    <a href="<?php echo $loginLogsPath; ?>" class="<?php echo $loginLogsClass; ?>"
+                        <?php if ($loginLogsPath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-history"></i> Login Logs
+                    </a>
+                </div>
+            <?php endif; ?>
+        </div>
+
+        <div class="sidebar-footer">
+            <div class="user-profile">
+                <div class="user-avatar">
+                   <?php echo strtoupper(substr($userName, 0, 1)); ?>
+                </div>
+                <div class="user-details">
+                    <span class="user-name"><?php echo $userName; ?></span>
+                    <span class="user-role-text"><?php echo $displayRole; ?></span>
+                </div>
+            </div>
+            <div class="footer-controls">
+                <a href="?toggle_theme=1" class="control-btn btn-theme" title="Toggle Theme">
+                    <i class="fas <?php echo ($currentTheme === 'dark') ? 'fa-sun' : 'fa-moon'; ?>"></i>
+                    <?php echo ($currentTheme === 'dark') ? 'Light' : 'Dark'; ?>
+                </a>
+                <a href="?logout=1" class="control-btn btn-logout" title="Sign Out">
+                    <i class="fas fa-sign-out-alt"></i> Logout
                 </a>
             </div>
         </div>
-        <a href="?logout=1" class="logout-link" onclick="return confirmLogout()">
-            <i class="fas fa-sign-out-alt"></i> Logout
-        </a>
     </div>
-
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+    
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
     <script>
-        const sidebar = document.getElementById('sidebar');
-        const sidebarOverlay = document.getElementById('sidebarOverlay');
-        const body = document.body;
-
-        function confirmLogout() {
-            return confirm('Are you sure you want to logout?');
-        }
-
-        function toggleTheme() {
-            // Use AJAX to toggle theme without page refresh
-            fetch('?toggle_theme=1')
-                .then(response => {
-                    if (response.ok) {
-                        window.location.reload();
-                    }
-                })
-                .catch(error => {
-                    console.error('Error toggling theme:', error);
-                    window.location.href = '?toggle_theme=1';
-                });
-        }
-
-        function toggleSidebar() {
-            // Toggle sidebar using CSS classes only - no page refresh
-            body.classList.toggle('sidebar-open');
-
-            // Save sidebar state via AJAX to maintain state across page refreshes
-            const isOpen = body.classList.contains('sidebar-open');
-            fetch('?toggle_sidebar=1&state=' + (isOpen ? 'open' : 'closed'))
-                .catch(error => {
-                    console.error('Error saving sidebar state:', error);
-                });
-        }
-
-        window.toggleSubmenu = function(menuId) {
-            const submenu = document.getElementById(menuId);
+        function toggleSubmenu(id) {
+            const submenu = document.getElementById(id);
             const menuItem = submenu.previousElementSibling;
-
-            // Close all other submenus when opening a new one
-            document.querySelectorAll('.submenu').forEach(sm => {
-                if (sm.id !== menuId && sm.classList.contains('active')) {
-                    sm.classList.remove('active');
-                    const prevItem = sm.previousElementSibling;
-                    if (prevItem && prevItem.classList.contains('menu-item')) {
-                        prevItem.classList.remove('active');
-                    }
-                }
-            });
-
             submenu.classList.toggle('active');
             menuItem.classList.toggle('active');
-        };
-
-        window.showAccessDenied = function() {
-            alert('Access Denied: This module is only available to HR Managers. Please contact your administrator.');
-        };
-
-        window.showFileMissing = function() {
-            alert('File Missing: The requested page is currently unavailable. Please contact the administrator.');
-            return false;
-        };
-
-        // Sidebar Clock
-        function updateTime() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-            const dateString = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            
-            const clockElement = document.getElementById('sidebarClock');
-            if(clockElement) {
-                clockElement.innerHTML = `<div>${timeString}</div><div style="font-size: 0.75rem; opacity: 0.8; font-weight: normal;">${dateString}</div>`;
-            }
-            
-            // Also update header time if it exists
-            const headerTime = document.getElementById('currentTime');
-            if(headerTime) {
-                headerTime.textContent = dateString + ' | ' + timeString;
-            }
         }
-        
-        setInterval(updateTime, 1000);
-        updateTime(); // Run immediately
 
-        // Close sidebar when clicking on overlay
-        sidebarOverlay.addEventListener('click', function() {
-            toggleSidebar();
-        });
+        // Toggle sidebar
+        function toggleSidebar() {
+            document.body.classList.toggle('sidebar-open');
+            // Save state via ajax or cookie if needed, but we use PHP session for now via GET
+            const isOpen = document.body.classList.contains('sidebar-open');
+            // Optional: update URL to save state without reload (visual only until next navigatin)
+             // For persistence, we use the PHP GET parameter approach on links, but for JS toggle we might want fetch
+             fetch('?toggle_sidebar=1', { method: 'HEAD' });
+        }
 
-        // Close sidebar when a menu item is clicked on mobile
-        document.querySelectorAll('.sidebar a[href!="javascript:void(0)"]').forEach(link => {
-            link.addEventListener('click', function() {
-                if (window.innerWidth <= 768) {
-                    toggleSidebar();
-                }
-            });
-        });
+        function showAccessDenied() {
+            alert('You do not have permission to access this module.');
+        }
 
-        // Prevent navigation for missing files
-        document.querySelectorAll('.missing-file').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                showFileMissing();
-                return false;
-            });
-        });
+        function showFileMissing() {
+            alert('This file has not been created yet.');
+        }
 
-        // Prevent navigation for restricted modules
-        document.querySelectorAll('.restricted-module').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                showAccessDenied();
-                return false;
-            });
-        });
-
-        // Close sidebar when pressing Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && body.classList.contains('sidebar-open')) {
-                toggleSidebar();
-            }
-        });
-
-        // Update current time
-        function updateCurrentTime() {
+        function updateClock() {
             const now = new Date();
             const options = {
                 weekday: 'short',
@@ -914,17 +1017,20 @@ function getModulePath($basePath, $moduleFile)
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
-                second: '2-digit',
-                hour12: true
+                second: '2-digit'
             };
-            document.getElementById('currentTime').textContent = now.toLocaleDateString('en-US', options);
+            const timeString = now.toLocaleTimeString('en-US', options);
+            
+            const clockEl = document.getElementById('sidebarClock');
+            const headerTimeEl = document.getElementById('currentTime');
+            
+            if(clockEl) clockEl.textContent = timeString;
+            if(headerTimeEl) headerTimeEl.textContent = timeString;
         }
 
-        // Update time immediately and then every second
-        updateCurrentTime();
-        setInterval(updateCurrentTime, 1000);
+        setInterval(updateClock, 1000);
+        updateClock();
     </script>
 </body>
 
 </html>
-<?php ob_end_flush(); ?>

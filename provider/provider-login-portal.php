@@ -25,47 +25,60 @@ $error_message = '';
 $success_message = '';
 
 // Setup provider accounts in database if needed
+// Setup provider accounts in database if needed
 function setupProviderAccounts($pdo)
 {
     if (!$pdo) return false;
 
     try {
-        // Check if providers table has username and password_hash columns
-        $checkColumns = $pdo->query("SHOW COLUMNS FROM providers LIKE 'username'");
-        $hasUsername = $checkColumns->rowCount() > 0;
+        // 1. Create Table
+        $sqlCreate = "CREATE TABLE IF NOT EXISTS `providers` (
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `provider_name` varchar(150) NOT NULL,
+          `username` varchar(100) DEFAULT NULL,
+          `password_hash` varchar(255) DEFAULT NULL,
+          `provider_type` enum('HMO','Insurance','Dental','Vision','Wellness','Other') DEFAULT 'HMO',
+          `email` varchar(150) DEFAULT NULL,
+          `contact_person` varchar(100) DEFAULT NULL,
+          `phone` varchar(50) DEFAULT NULL,
+          `address` text DEFAULT NULL,
+          `coverage_type` enum('Comprehensive','Basic','Supplemental','Specialized') DEFAULT 'Comprehensive',
+          `portal_access` enum('enabled','disabled','suspended') DEFAULT 'enabled',
+          `portal_status` enum('active','inactive','pending') DEFAULT 'active',
+          `status` enum('Active','Inactive','Pending') DEFAULT 'Active',
+          `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+          `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+          PRIMARY KEY (`id`),
+          UNIQUE KEY `username` (`username`),
+          UNIQUE KEY `provider_name` (`provider_name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+        
+        $pdo->exec($sqlCreate);
 
-        if (!$hasUsername) {
-            // Add username column
-            $pdo->exec("ALTER TABLE `providers` ADD COLUMN `username` VARCHAR(100) DEFAULT NULL AFTER `provider_name`");
-            // Add password_hash column
-            $pdo->exec("ALTER TABLE `providers` ADD COLUMN `password_hash` VARCHAR(255) DEFAULT NULL AFTER `username`");
-        }
-
-        // Update existing providers with usernames and passwords
-        $providers = [
-            ['id' => 1, 'username' => 'maxicare', 'provider_name' => 'Maxicare Healthcare Corporation'],
-            ['id' => 2, 'username' => 'medicard', 'provider_name' => 'MediCard Philippines, Inc.'],
-            ['id' => 3, 'username' => 'intellicare', 'provider_name' => 'Intellicare'],
-            ['id' => 4, 'username' => 'philam', 'provider_name' => 'Philam Life'],
-            ['id' => 5, 'username' => 'sunlife', 'provider_name' => 'Sun Life Grepa']
+        // 2. Check if data exists, if not (or forcefully) insert/update
+        // The user asked to Apply this, implying we should ensure these records exist.
+        // We will use INSERT ON DUPLICATE KEY UPDATE or just INSERT IGNORE to avoid errors, 
+        // but given the specific ID requirement, let's try to upsert.
+        
+        $providersData = [
+            [1, 'Maxicare Healthcare Corporation', 'maxicare', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'HMO', 'support@maxicare.com.ph', 'Juan Dela Cruz', '+63 2 8888 9999', 'Maxicare Center, Ortigas Center, Pasig City', 'Comprehensive', 'enabled', 'active', 'Active'],
+            [2, 'MediCard Philippines, Inc.', 'medicard', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'HMO', 'info@medicardphils.com', 'Maria Santos', '+63 2 7777 8888', 'MediCard Building, Makati City', 'Comprehensive', 'enabled', 'active', 'Active'],
+            [3, 'Intellicare', 'intellicare', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'HMO', 'customerservice@intellicare.com.ph', 'Pedro Reyes', '+63 2 6666 7777', 'Intellicare House, Bonifacio Global City', 'Comprehensive', 'enabled', 'active', 'Active'],
+            [4, 'Philam Life', 'philam', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Insurance', 'philamlife@aia.com', 'Robert Lim', '+63 2 5555 6666', 'Philam Life Tower, Paseo de Roxas, Makati', 'Comprehensive', 'enabled', 'active', 'Active'],
+            [5, 'Sun Life Grepa', 'sunlife', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Insurance', 'contact@sunlife.com.ph', 'Anna Gomez', '+63 2 4444 5555', 'Sun Life Centre, Bonifacio Global City', 'Comprehensive', 'enabled', 'active', 'Active']
         ];
 
-        $password_hash = password_hash('provider123', PASSWORD_DEFAULT);
+        $stmt = $pdo->prepare("INSERT INTO `providers` 
+            (`id`, `provider_name`, `username`, `password_hash`, `provider_type`, `email`, `contact_person`, `phone`, `address`, `coverage_type`, `portal_access`, `portal_status`, `status`) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            provider_name=VALUES(provider_name), 
+            username=VALUES(username),
+            password_hash=VALUES(password_hash),
+            email=VALUES(email)");
 
-        foreach ($providers as $provider) {
-            $stmt = $pdo->prepare("UPDATE `providers` SET 
-                `username` = :username,
-                `password_hash` = :password_hash,
-                `portal_access` = 'enabled',
-                `portal_status` = 'active',
-                `status` = 'Active'
-                WHERE `id` = :id");
-
-            $stmt->execute([
-                ':username' => $provider['username'],
-                ':password_hash' => $password_hash,
-                ':id' => $provider['id']
-            ]);
+        foreach ($providersData as $row) {
+            $stmt->execute($row);
         }
 
         return true;
