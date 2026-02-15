@@ -2419,6 +2419,32 @@ if (isset($_GET['edit'])) {
         </div>
     </div>
 
+    <!-- Google Gemini Audit Modal -->
+    <div class="modal fade" id="geminiAuditModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-robot me-2"></i>Gemini AI System Audit</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="auditLoading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <h5 class="mt-3">Analyzing HR Data...</h5>
+                        <p class="text-muted">Connecting to Google Gemini AI for insights.</p>
+                    </div>
+                    <div id="auditResults" style="display:none;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="runGeminiAudit()"><i class="fas fa-redo me-1"></i> Re-scan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         // Show alert message
@@ -2457,7 +2483,7 @@ if (isset($_GET['edit'])) {
                 // Disable import button while fetching
                 if (importBtn) importBtn.disabled = true;
 
-                fetch('/HR1/api/employee_data.php')
+                fetch('http://localhost/HR1/api/employee_data.php')
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('Network response was not ok');
@@ -3005,6 +3031,62 @@ if (isset($_GET['edit'])) {
             setupDeleteHandler('.delete-disciplinary', 'disciplinary');
             setupDeleteHandler('.delete-document', 'document');
         });
+
+        // Gemini Audit Function
+        function runGeminiAudit() {
+            // Show Modal
+            const modalElement = document.getElementById('geminiAuditModal');
+            if(modalElement) {
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+                
+                const loading = document.getElementById('auditLoading');
+                const results = document.getElementById('auditResults');
+                
+                if(loading) loading.style.display = 'block';
+                if(results) results.style.display = 'none';
+
+                // Fetch from Local API
+                fetch('http://localhost/HR4/api/gemini_audit.php')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if(loading) loading.style.display = 'none';
+                        if(results) {
+                            results.style.display = 'block';
+                            
+                            let html = '';
+                            if (data.success) {
+                                html += `<div class="alert alert-success"><i class="fas fa-check-circle me-2"></i>Audit Completed</div>`;
+                                if(data.analysis) {
+                                     // Format the analysis cleanly
+                                     const analysisText = typeof data.analysis === 'string' ? data.analysis : JSON.stringify(data.analysis, null, 2);
+                                     html += `<div class="p-3 bg-light border rounded"><pre style="white-space: pre-wrap; font-family: inherit; margin:0;">${analysisText}</pre></div>`;
+                                } else {
+                                     html += `<div class="alert alert-info">No analysis data returned.</div>`;
+                                }
+                            } else {
+                                html += `<div class="alert alert-warning"><i class="fas fa-exclamation-triangle me-2"></i>${data.message || 'Audit warning'}</div>`;
+                            }
+                            results.innerHTML = html;
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Gemini Audit Error:', error);
+                        if(loading) loading.style.display = 'none';
+                        if(results) {
+                            results.style.display = 'block';
+                            results.innerHTML = `<div class="alert alert-danger"><i class="fas fa-times-circle me-2"></i>Error: ${error.message}</div>`;
+                        }
+                    });
+            } else {
+                alert('Audit Modal not defined in page.');
+            }
+        }
     </script>
 </body>
 
