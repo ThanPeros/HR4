@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                     }
 
                     // Redirect to provider dashboard
-                    header('Location: provider-dashboard.php');
+                    header('Location: index.php');
                     exit;
                 }
             } catch (PDOException $e) {
@@ -232,6 +232,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         }
 
         // If no authentication succeeded
+        // Check for Hardcoded Provider Credentials
+        $provider_accounts = [
+            'maxicare' => [
+                'password' => 'maxicare123',
+                'name' => 'Maxicare Healthcare Corporation',
+                'id' => 1,
+                'email' => 'support@maxicare.com.ph',
+                'contact' => 'Juan Dela Cruz'
+            ],
+            'medicard' => [
+                'password' => 'medicard123',
+                'name' => 'MediCard Philippines, Inc.',
+                'id' => 2,
+                'email' => 'info@medicardphils.com',
+                'contact' => 'Maria Santos'
+            ],
+            'intellicare' => [
+                'password' => 'intellicare123',
+                'name' => 'Intellicare',
+                'id' => 3,
+                'email' => 'customerservice@intellicare.com.ph',
+                'contact' => 'Pedro Reyes'
+            ],
+            'philam' => [
+                'password' => 'philam123',
+                'name' => 'Philam Life',
+                'id' => 4,
+                'email' => 'philamlife@aia.com',
+                'contact' => 'Robert Lim'
+            ],
+            'sunlife' => [
+                'password' => 'sunlife123',
+                'name' => 'Sun Life Grepa',
+                'id' => 5,
+                'email' => 'contact@sunlife.com.ph',
+                'contact' => 'Anna Gomez'
+            ]
+        ];
+
+        if (array_key_exists($username, $provider_accounts) && $password === $provider_accounts[$username]['password']) {
+             // Set session variables for provider
+             $_SESSION['user_logged_in'] = true;
+             $_SESSION['user_role'] = 'provider';
+             $_SESSION['provider_id'] = $provider_accounts[$username]['id'];
+             $_SESSION['provider_name'] = $provider_accounts[$username]['name'];
+             $_SESSION['username'] = $username;
+             $_SESSION['user_email'] = $provider_accounts[$username]['email'];
+             $_SESSION['user_name'] = $provider_accounts[$username]['contact'];
+             $_SESSION['provider_status'] = 'Active';
+             $_SESSION['login_time'] = time();
+
+             // Clear output buffer before redirect
+             if (ob_get_level() > 0) {
+                 ob_end_clean();
+             }
+
+             // Redirect to provider dashboard
+             header('Location: index.php');
+             exit;
+        }
+
         $error_message = "Invalid username or password. Please try again.";
     }
 }

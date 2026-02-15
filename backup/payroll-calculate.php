@@ -26,27 +26,6 @@ function getWeightedRandom($weights)
 
 function fetchAttendanceData($employeeId, $startDate, $endDate)
 {
-    global $pdo;
-
-    // Try real HR3 data first
-    try {
-        $stmt = $pdo->prepare("SELECT attendance_date as date, hr4_employee_id as employee_id,
-            attendance_status as status, clock_in as time_in, clock_out as time_out,
-            late_minutes, total_hours
-            FROM hr3_attendance_cache
-            WHERE hr4_employee_id = ? AND attendance_date BETWEEN ? AND ?
-            ORDER BY attendance_date ASC");
-        $stmt->execute([$employeeId, $startDate, $endDate]);
-        $realRecords = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        if (!empty($realRecords)) {
-            return ['attendance_records' => $realRecords, 'source' => 'hr3'];
-        }
-    } catch (Exception $e) {
-        // Table might not exist yet, fall through to simulated
-    }
-
-    // Fallback: simulated data
     $records = [];
     $start = new DateTime($startDate);
     $end = new DateTime($endDate);
@@ -68,7 +47,7 @@ function fetchAttendanceData($employeeId, $startDate, $endDate)
         $records[] = $record;
         $start->add(new DateInterval('P1D'));
     }
-    return ['attendance_records' => $records, 'source' => 'simulated'];
+    return ['attendance_records' => $records];
 }
 
 function calculateAttendanceDeductions($attendanceData, $dailyRate)
@@ -135,20 +114,8 @@ if (isset($data->employee_id) && isset($data->start_date) && isset($data->end_da
         $dailyRate = $employee['salary'] / 22;
         $deductions = calculateAttendanceDeductions($attendance, $dailyRate);
 
-        // 3. Calculate Earnings - try real HR3 OT data, fallback to random
-        $overtimePay = 0;
-        try {
-            $otStmt = $pdo->prepare("SELECT total_overtime_hours FROM hr3_employee_summary WHERE hr4_employee_id = ? ORDER BY id DESC LIMIT 1");
-            $otStmt->execute([$employee['id']]);
-            $otData = $otStmt->fetchColumn();
-            if ($otData !== false) {
-                $overtimePay = floatval($otData) * ($employee['salary'] / 160) * 1.25;
-            } else {
-                $overtimePay = rand(0, 20) * ($employee['salary'] / 160) * 1.25;
-            }
-        } catch (Exception $e) {
-            $overtimePay = rand(0, 20) * ($employee['salary'] / 160) * 1.25;
-        }
+        // 3. Calculate Earnings (including random OT/Night Diff from index.php)
+        $overtimePay = rand(0, 20) * ($employee['salary'] / 160) * 1.25;
         $nightDiffPay = rand(0, 10) * ($employee['salary'] / 160) * 0.10;
 
         $grossPay = $employee['salary'] + $overtimePay + $nightDiffPay;

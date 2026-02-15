@@ -7,7 +7,8 @@ ob_start();
 /**
  * Auto-Responsive System Class
  */
-class AutoResponsiveSystem
+if (!class_exists('AutoResponsiveSystem')) {
+ class AutoResponsiveSystem
 {
 
     private $css_rules = '';
@@ -698,65 +699,68 @@ class AutoResponsiveSystem
         return 'desktop';
     }
 }
+}
 
-/**
- * Global function to include responsive system
- */
-function include_auto_responsive()
-{
-    static $responsive = null;
+if (!function_exists('include_auto_responsive')) {
+    /**
+     * Global function to include responsive system
+     */
+    function include_auto_responsive()
+    {
+        static $responsive = null;
 
-    if ($responsive === null) {
-        $responsive = new AutoResponsiveSystem();
-    }
-
-    // Start output buffering to process HTML
-    ob_start(function ($buffer) use ($responsive) {
-        // Process the HTML to make it responsive
-        $processed = $responsive->processHTML($buffer);
-
-        // Find the position to inject CSS (before </head>)
-        $headPos = strpos($processed, '</head>');
-        if ($headPos !== false) {
-            $css = '<style>' . $responsive->getCSS() . '</style>';
-            $processed = substr_replace($processed, $css, $headPos, 0);
+        if ($responsive === null) {
+            $responsive = new AutoResponsiveSystem();
         }
 
-        // Find the position to inject JS (before </body>)
-        $bodyPos = strpos($processed, '</body>');
-        if ($bodyPos !== false) {
-            $js = $responsive->getJS();
-            $processed = substr_replace($processed, $js, $bodyPos, 0);
-        }
+        // Start output buffering to process HTML
+        ob_start(function ($buffer) use ($responsive) {
+            // Process the HTML to make it responsive
+            $processed = $responsive->processHTML($buffer);
 
-        return $processed;
-    });
-
-    // Register shutdown function to flush buffer
-    register_shutdown_function(function () use ($responsive) {
-        $output = ob_get_contents();
-        if ($output) {
-            ob_end_clean();
-
-            // Process and output
-            $processed = $responsive->processHTML($output);
-
-            // Inject CSS and JS
+            // Find the position to inject CSS (before </head>)
             $headPos = strpos($processed, '</head>');
             if ($headPos !== false) {
                 $css = '<style>' . $responsive->getCSS() . '</style>';
                 $processed = substr_replace($processed, $css, $headPos, 0);
             }
 
+            // Find the position to inject JS (before </body>)
             $bodyPos = strpos($processed, '</body>');
             if ($bodyPos !== false) {
                 $js = $responsive->getJS();
                 $processed = substr_replace($processed, $js, $bodyPos, 0);
             }
 
-            echo $processed;
-        }
-    });
+            return $processed;
+        });
+
+        // Register shutdown function to flush buffer
+        register_shutdown_function(function () use ($responsive) {
+            $output = ob_get_contents();
+            if ($output) {
+                ob_end_clean();
+
+                // Process and output
+                $processed = $responsive->processHTML($output);
+
+                // Inject CSS and JS
+                $headPos = strpos($processed, '</head>');
+                if ($headPos !== false) {
+                    $css = '<style>' . $responsive->getCSS() . '</style>';
+                    $processed = substr_replace($processed, $css, $headPos, 0);
+                }
+
+                $bodyPos = strpos($processed, '</body>');
+                if ($bodyPos !== false) {
+                    $js = $responsive->getJS();
+                    $processed = substr_replace($processed, $js, $bodyPos, 0);
+                }
+
+                echo $processed;
+            }
+        });
+    }
 }
 
 // Auto-initialize if not included manually

@@ -4,14 +4,14 @@ session_start();
 
 // Check if provider is logged in
 if (!isset($_SESSION['user_logged_in']) || $_SESSION['user_logged_in'] !== true) {
-    header('Location: provider-login-portal.php');
+    require 'provider-login-portal.php';
     exit;
 }
 
 // Handle Logout
 if (isset($_GET['logout'])) {
     session_destroy();
-    header("Location: provider-login-portal.php");
+    header("Location: index.php");
     exit;
 }
 

@@ -1,4 +1,7 @@
 <?php
+// Include Auto-Responsive System for Login/OTP
+require_once __DIR__ . '/responsive/auto_responsive.php';
+
 // Only start session if not already active
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -37,7 +40,7 @@ define('LOCKOUT_DURATION', 1 * 60); // 1 minute
 
 // OTP Configuration
 define('OTP_LENGTH', 6);
-define('OTP_EXPIRY_MINUTES', 10);
+define('OTP_EXPIRY_MINUTES', 1);
 define('MAX_OTP_ATTEMPTS', 3);
 define('OTP_LOCKOUT_MINUTES', 15);
 
@@ -994,6 +997,41 @@ function clearOTP($userId)
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* MOBILE RESPONSIVE FIX */
+        @media (max-width: 768px) {
+            .login-container {
+                flex-direction: column;
+                margin: 1rem;
+                max-width: 100%;
+            }
+
+            .welcome-panel {
+                padding: 2rem 1rem;
+                min-height: auto;
+                flex: none; /* Don't expand */
+            }
+
+            .welcome-panel h1 {
+                font-size: 1.5rem;
+                margin-bottom: 0.5rem;
+            }
+
+            .login-panel {
+                width: 100%;
+                padding: 2rem 1.5rem;
+            }
+
+            .main-container {
+                padding: 1rem;
+                align-items: flex-start; /* prevent centering vertically if content is tall */
+            }
+            
+            /* Hide excessive branding on very small screens if needed */
+            .logo-animation { 
+                /* Assuming there might be a logo animation to scale down */
+                transform: scale(0.8);
+            }
+        }
     </style>
 </head>
 
@@ -1030,9 +1068,8 @@ function clearOTP($userId)
                                 maxlength="6" pattern="[0-9]{6}" title="Enter 6-digit OTP code"
                                 class="otp-input" autofocus autocomplete="off">
 
-                            <div class="button-group">
                                 <button type="submit" name="verify_otp" id="verifyBtn">Verify OTP</button>
-                                <button type="submit" name="resend_otp" class="resend-btn" id="resendBtn">Resend OTP</button>
+                                <button type="submit" name="resend_otp" class="resend-btn" id="resendBtn" formnovalidate>Resend OTP</button>
                             </div>
                         </form>
 
@@ -1092,73 +1129,99 @@ function clearOTP($userId)
         document.getElementById('currentYear').textContent = new Date().getFullYear();
 
         document.addEventListener('DOMContentLoaded', function() {
-            // OTP Input Validation
-            const otpInput = document.querySelector('input[name="otp_code"]');
-            if (otpInput) {
-                otpInput.addEventListener('input', function(e) {
-                    this.value = this.value.replace(/[^0-9]/g, '');
-                });
-                otpInput.focus();
+// Update OTP Configuration
+    const otpInput = document.querySelector('input[name="otp_code"]');
+    if (otpInput) {
+        otpInput.addEventListener('input', function(e) {
+            this.value = this.value.replace(/[^0-9]/g, '');
+        });
+        otpInput.focus();
+    }
+
+    // Resend OTP Countdown Timer
+    const resendBtn = document.getElementById('resendBtn');
+    let resendTimer = 60; // 60 seconds matching the 1 minute expiry
+    
+    if (resendBtn) {
+        // Disable initially
+        resendBtn.disabled = true;
+        resendBtn.classList.add('disabled'); // Add styling class if needed
+        
+        // Update text function
+        const updateButtonText = () => {
+            if (resendTimer > 0) {
+                resendBtn.innerText = `Resend OTP (${resendTimer}s)`;
+                resendTimer--;
+                setTimeout(updateButtonText, 1000);
+            } else {
+                resendBtn.disabled = false;
+                resendBtn.classList.remove('disabled');
+                resendBtn.innerText = 'Resend OTP';
             }
+        };
+        
+        // Start countdown
+        updateButtonText();
+    }
 
-            // Function to show loading state
-            const showLoading = (btn, text = 'Loading...') => {
-                // Add button loading state
-                if(btn) {
-                    btn.classList.add('btn-loading');
-                    // Store original text just in case (though page usually reloads)
-                    btn.dataset.originalText = btn.innerText;
-                }
+    // Function to show loading state
+    const showLoading = (btn, text = 'Loading...') => {
+        // Add button loading state
+        if(btn) {
+            btn.classList.add('btn-loading');
+            // Store original text just in case (though page usually reloads)
+            btn.dataset.originalText = btn.innerText;
+        }
 
-                // Show Overlay
-                const overlay = document.getElementById('loadingOverlay');
-                const loadingText = document.getElementById('loadingText');
-                if(overlay && loadingText) {
-                    loadingText.innerText = text;
-                    overlay.style.display = 'flex';
-                }
-            };
+        // Show Overlay
+        const overlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        if(overlay && loadingText) {
+            loadingText.innerText = text;
+            overlay.style.display = 'flex';
+        }
+    };
 
-            // Handle Login Form
-            const loginForm = document.getElementById('loginForm');
-            if (loginForm) {
-                loginForm.addEventListener('submit', function(e) {
-                    const username = document.querySelector('input[name="username"]').value.trim();
-                    const password = document.querySelector('input[name="password"]').value.trim();
-                    const terms = document.querySelector('input[name="terms"]').checked;
+    // Handle Login Form
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+        loginForm.addEventListener('submit', function(e) {
+            const username = document.querySelector('input[name="username"]').value.trim();
+            const password = document.querySelector('input[name="password"]').value.trim();
+            const terms = document.querySelector('input[name="terms"]').checked;
 
-                    if (username && password && terms) {
-                        const btn = document.getElementById('loginButton');
-                        showLoading(btn, 'Verifying Credentials...');
-                    } else {
-                        // Prevent submission if fields missing (HTML5 should catch this, but good fallback)
-                         // e.preventDefault(); 
-                    }
-                });
+            if (username && password && terms) {
+                const btn = document.getElementById('loginButton');
+                showLoading(btn, 'Verifying Credentials...');
+            } else {
+                // Prevent submission if fields missing (HTML5 should catch this, but good fallback)
+                 // e.preventDefault(); 
             }
+        });
+    }
 
-            // Handle OTP Form
-            const otpForm = document.getElementById('otpForm');
-            if(otpForm) {
-                otpForm.addEventListener('submit', function(e) {
-                    // Determine which button was clicked
-                    const verifyBtn = document.getElementById('verifyBtn');
-                    const resendBtn = document.getElementById('resendBtn');
-                    
-                    // Simple check - in actual submit event, it's harder to know which button triggered it without click listeners
-                    // But we can assume verification if it wasn't the resend button explicitly tracked
-                    
-                    setTimeout(() => {
-                         // We delay slightly to let the browser register the submit
-                         const btn = document.activeElement; // Get the button that was clicked
-                         if(btn && btn.name === 'resend_otp') {
-                             showLoading(btn, 'Sending New OTP...');
-                         } else {
-                             showLoading(verifyBtn, 'Validating Code...');
-                         }
-                    }, 0);
-                });
-            }
+    // Handle OTP Form
+    const otpForm = document.getElementById('otpForm');
+    if(otpForm) {
+        otpForm.addEventListener('submit', function(e) {
+            // Determine which button was clicked
+            const verifyBtn = document.getElementById('verifyBtn');
+            const resendBtn = document.getElementById('resendBtn');
+            
+            // Simple check - in actual submit event, it's harder to know which button triggered it without click listeners
+            // But we can assume verification if it wasn't the resend button explicitly tracked
+            
+            setTimeout(() => {
+                 // We delay slightly to let the browser register the submit
+                 const btn = document.activeElement; // Get the button that was clicked
+                 if(btn && btn.name === 'resend_otp') {
+                     showLoading(btn, 'Sending New OTP...');
+                 } else {
+                     showLoading(verifyBtn, 'Validating Code...');
+                 }
+            }, 0);
+        });
+    }
         });
     </script>
     <!-- Professional Offline Access Modal -->

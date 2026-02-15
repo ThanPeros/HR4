@@ -47,6 +47,8 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `phone` VARCHAR(20) NULL AFTER `email`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `address` TEXT NULL AFTER `phone`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `photo` VARCHAR(255) NULL AFTER `address`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `gender` VARCHAR(20) NULL AFTER `photo`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `age` INT(3) NULL AFTER `gender`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `employee_id` VARCHAR(20) NULL AFTER `id`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_date` DATE NULL AFTER `age`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_place` VARCHAR(100) NULL AFTER `birth_date`",
@@ -58,7 +60,8 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `philhealth_no` VARCHAR(20) NULL AFTER `tin_no`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `pagibig_no` VARCHAR(20) NULL AFTER `philhealth_no`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `passport_no` VARCHAR(20) NULL AFTER `pagibig_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_hired` DATE NULL AFTER `passport_no`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `contract` VARCHAR(50) NULL AFTER `job_title`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_hired` DATE NULL AFTER `contract`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_regularized` DATE NULL AFTER `date_hired`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `resume_file` VARCHAR(255) NULL AFTER `photo`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `diploma_file` VARCHAR(255) NULL AFTER `resume_file`",
@@ -279,29 +282,29 @@ function handleFileUpload($file, $employee_id, $type = 'photo')
     return ['success' => false, 'message' => 'Failed to save file'];
 }
 
-// Get all employees
-function getEmployees($department = null, $status = null)
-{
-    $pdo = getDB();
-    $sql = "SELECT * FROM `employees` WHERE 1=1";
+// Function to Get Employees 
+function getEmployees($department = null, $status = null, $search = null) {
+    global $pdo;
+    $sql = "SELECT * FROM employees WHERE 1=1";
     $params = [];
 
     if ($department) {
         $sql .= " AND department = ?";
         $params[] = $department;
     }
-
     if ($status) {
         $sql .= " AND status = ?";
         $params[] = $status;
     }
+    if ($search) {
+        $sql .= " AND (name LIKE ? OR employee_id LIKE ?)";
+        $params[] = "%$search%";
+        $params[] = "%$search%";
+    }
 
-    $sql .= " ORDER BY name ASC";
-
+    $sql .= " ORDER BY id DESC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
-
-    return $stmt->fetchAll();
     return $stmt->fetchAll();
 }
 
@@ -1181,6 +1184,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 break;
 
+            case 'import_hr1_employees':
+                $raw_data = $_POST['employees'] ?? '[]';
+                $employees_to_import = json_decode($raw_data, true);
+                $imported_count = 0;
+                $skipped_count = 0;
+                
+                if (json_last_error() === JSON_ERROR_NONE && is_array($employees_to_import)) {
+                    $pdo = getDB();
+                    // Prepare statements
+                    $stmtCheck = $pdo->prepare("SELECT id FROM employees WHERE email = ?");
+                    $stmtInsert = $pdo->prepare("INSERT INTO employees (name, email, job_title, department, status, employee_id) VALUES (?, ?, ?, ?, 'Active', ?)");
+                    
+                    foreach ($employees_to_import as $emp) {
+                        $email = $emp['email'] ?? '';
+                        if (empty($email)) continue; // Skip if no email to identify
+                        
+                        // Check duplicate
+                        $stmtCheck->execute([$email]);
+                        if ($stmtCheck->fetch()) {
+                            $skipped_count++;
+                            continue; 
+                        }
+                        
+                        $name = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
+                        $job_title = $emp['position'] ?? '';
+                        $dept = $emp['department'] ?? '';
+                        $hr1_id = $emp['id'] ?? rand(1000,9999);
+                        $emp_id = 'IMP-' . str_pad($hr1_id, 4, '0', STR_PAD_LEFT); // Prefix IMP for imported
+                        
+                        // Note: Ignoring avatar/photo for now as it requires file downloading/handling logic not present
+                        
+                        if ($stmtInsert->execute([$name, $email, $job_title, $dept, $emp_id])) {
+                            $imported_count++;
+                        }
+                    }
+                    $response = ['success' => true, 'message' => "Import complete. Imported: $imported_count, Skipped (Duplicate): $skipped_count"];
+                } else {
+                    $response['message'] = 'Invalid employee data format';
+                }
+                break;
+
             default:
                 $response['message'] = 'Invalid action';
                 break;
@@ -1209,10 +1253,11 @@ while ($row = $depts_result->fetch()) {
     $depts[] = $row['department'];
 }
 
-// Get employees for listing
-$department_filter = $_GET['department'] ?? null;
-$status_filter = $_GET['status'] ?? null;
-$employees = getEmployees($department_filter, $status_filter);
+// Handle Filters
+$department_filter = $_GET['department'] ?? '';
+$status_filter = $_GET['status'] ?? '';
+$search_query = $_GET['search'] ?? '';
+$employees = getEmployees($department_filter, $status_filter, $search_query);
 
 // Get specific employee for editing
 $edit_employee = null;
@@ -1582,6 +1627,40 @@ if (isset($_GET['edit'])) {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
+        /* MOBILE RESPONSIVE FIXES */
+        @media (max-width: 768px) {
+            /* Fix Gemini Card Layout */
+            [style*="columns: 2"] {
+                columns: 1 !important;
+                width: 100% !important;
+            }
+            
+            /* Fix Long Header Text Wrapping */
+            .text-xs.font-weight-bold.text-uppercase {
+                white-space: normal !important;
+                line-height: 1.2 !important;
+                margin-bottom: 0.5rem !important;
+            }
+
+            /* Adjust Container Margins */
+            .container.mt-4 {
+                margin-top: 20px !important; /* Reduce gap */
+                padding-left: 10px !important;
+                padding-right: 10px !important;
+            }
+
+            /* Generic Navbar/Header Fixes */
+            nav.navbar, header, .top-bar {
+                flex-wrap: wrap !important;
+                height: auto !important;
+                padding: 10px !important;
+            }
+            
+            /* Stack header elements if they are flex */
+            nav.navbar > div, header > div {
+                flex-wrap: wrap !important;
+            }
+        }
     </style>
 </head>
 
@@ -1602,6 +1681,148 @@ if (isset($_GET['edit'])) {
             <?php unset($_SESSION['message'], $_SESSION['message_type']); ?>
         <?php endif; ?>
 
+        <!-- Google Gemini Highlights -->
+        <div class="card mb-4 border-0 shadow-sm" style="border-left: 5px solid #4e73df !important; background: linear-gradient(to right, #ffffff, #f8f9fc);">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                            Google Gemini (Good for document + data analysis)
+                        </div>
+                        <div class="h5 mb-2 font-weight-bold text-gray-800">Google (Gemini AI)</div>
+                        <div class="text-muted small">
+                            <strong class="d-block mb-1">Why it’s useful:</strong>
+                            <ul class="mb-0" style="columns: 2;">
+                                <li><i class="fas fa-file-contract text-primary me-2"></i>Analyze uploaded contracts</li>
+                                <li><i class="fas fa-file-pdf text-danger me-2"></i>Extract information from PDFs</li>
+                                <li><i class="fas fa-exclamation-triangle text-warning me-2"></i>Detect missing fields in employee records</li>
+                                <li><i class="fas fa-check-double text-success me-2"></i>Check inconsistencies in employee data</li>
+                            </ul>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary btn-sm" onclick="runGeminiAudit()">
+                                <i class="fas fa-magic me-2"></i>Run Smart Audit
+                            </button>
+                            <small class="text-muted ms-2 fst-italic">Powered by Gemini AI Logic</small>
+                        </div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-robot fa-3x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gemini Audit Modal -->
+        <div class="modal fade" id="geminiAuditModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-gradient-primary text-white">
+                        <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI-Powered Compliance Audit</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="auditLoading" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3 text-muted">Analyzing employee records and documents...</p>
+                        </div>
+                        <div id="auditResults" style="display:none;">
+                            <div class="alert alert-info d-flex align-items-center mb-3">
+                                <i class="fas fa-info-circle me-2"></i>
+                                <div>
+                                    Analysis Complete. Found <strong id="issueCount">0</strong> potential issues across <strong id="empCount">0</strong> active profiles.
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Employee</th>
+                                            <th>Detected Issues</th>
+                                            <th class="text-end">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="auditTableBody">
+                                        <!-- content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div id="auditEmpty" style="display:none;" class="text-center py-5">
+                            <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+                            <h5>All Clear!</h5>
+                            <p class="text-muted">No missing documents or data inconsistencies found.</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        function runGeminiAudit() {
+            const modal = new bootstrap.Modal(document.getElementById('geminiAuditModal'));
+            modal.show();
+            
+            document.getElementById('auditLoading').style.display = 'block';
+            document.getElementById('auditResults').style.display = 'none';
+            document.getElementById('auditEmpty').style.display = 'none';
+
+            fetch('../api/gemini_audit.php') // Adjust path if needed
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('auditLoading').style.display = 'none';
+                    
+                    if (data.success) {
+                        if (data.issues.length > 0) {
+                            document.getElementById('auditResults').style.display = 'block';
+                            document.getElementById('issueCount').textContent = data.stats.issues_found;
+                            document.getElementById('empCount').textContent = data.stats.analyzed;
+                            
+                            const tbody = document.getElementById('auditTableBody');
+                            tbody.innerHTML = '';
+                            
+                            data.issues.forEach(issue => {
+                                let issuesHtml = '';
+                                issue.findings.forEach(f => {
+                                    let badgeClass = f.severity === 'critical' ? 'bg-danger' : (f.severity === 'high' ? 'bg-warning text-dark' : 'bg-info text-dark');
+                                    issuesHtml += `<div class="mb-1"><span class="badge ${badgeClass} me-2">${f.type}</span>${f.msg}</div>`;
+                                });
+
+                                const tr = document.createElement('tr');
+                                tr.innerHTML = `
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="fw-bold text-dark">${issue.name}</div>
+                                        </div>
+                                        <small class="text-muted">${issue.employee_id} | ${issue.department}</small>
+                                    </td>
+                                    <td>${issuesHtml}</td>
+                                    <td class="text-end">
+                                        <a href="?edit=${issue.id}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i> Fix</a>
+                                    </td>
+                                `;
+                                tbody.appendChild(tr);
+                            });
+                        } else {
+                            document.getElementById('auditEmpty').style.display = 'block';
+                        }
+                    } else {
+                        alert('Error running audit: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('auditLoading').style.display = 'none';
+                    alert('An error occurred while running the audit.');
+                });
+        }
+        </script>
+
         <div class="row">
             <!-- Employee List -->
             <div class="col-12">
@@ -1615,8 +1836,17 @@ if (isset($_GET['edit'])) {
                     <div class="card-body">
                         <!-- Filters -->
                         <div class="filter-section mb-3">
-                            <form method="GET" class="row g-2">
+                        <!-- Filters & Search -->
+                        <div class="filter-section mb-3">
+                            <form method="GET" class="row g-2 align-items-end">
                                 <div class="col-md-4">
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                        <input type="text" name="search" class="form-control" placeholder="Search by name or ID..." value="<?php echo htmlspecialchars($search_query); ?>">
+                                        <button class="btn btn-outline-secondary" type="submit">Go</button>
+                                    </div>
+                                </div>
+                                <div class="col-md-3"> <!-- Changed from col-md-3 to col-md-3 -->
                                     <select name="department" class="form-select" onchange="this.form.submit()">
                                         <option value="">All Departments</option>
                                         <?php
@@ -1627,17 +1857,23 @@ if (isset($_GET['edit'])) {
                                         ?>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-2"> <!-- Reduced width -->
                                     <select name="status" class="form-select" onchange="this.form.submit()">
                                         <option value="">All Statuses</option>
                                         <option value="Active" <?php echo $status_filter === 'Active' ? 'selected' : ''; ?>>Active</option>
                                         <option value="Inactive" <?php echo $status_filter === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary">Clear Filters</a>
+                                <div class="col-md-1">
+                                    <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn btn-outline-secondary w-100" title="Clear Filters"><i class="fas fa-times"></i></a>
+                                </div>
+                                <div class="col-md-2">
+                                     <button type="button" class="btn btn-outline-primary w-100" id="fetchHr1Btn">
+                                        <i class="fas fa-cloud-download-alt me-1"></i> Fetch HR1
+                                    </button>
                                 </div>
                             </form>
+                        </div>
                         </div>
 
                         <!-- Employee Table -->
@@ -1701,6 +1937,10 @@ if (isset($_GET['edit'])) {
             <div class="modal fade" id="editEmployeeModal" tabindex="-1" data-bs-backdrop="static">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
+                        <?php 
+                            $is_imported = (strpos($edit_employee['employee_id'] ?? '', 'IMP-') === 0);
+                            $disabled_attr = $is_imported ? 'disabled' : '';
+                        ?>
                         <div class="modal-header">
                             <h5 class="modal-title text-primary"><i class="fas fa-user-edit me-2"></i>Edit Profile</h5>
                             <a href="<?php echo $_SERVER['PHP_SELF']; ?>" class="btn-close"></a>
@@ -1742,6 +1982,11 @@ if (isset($_GET['edit'])) {
                 <!-- PERSONAL TAB -->
                 <div class="tab-pane fade show active" id="tab_personal">
                     <div class="p-4">
+                        <?php if ($is_imported): ?>
+                            <div class="alert alert-warning mb-4">
+                                <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
+                            </div>
+                        <?php endif; ?>
                         <form method="POST" enctype="multipart/form-data" id="profileForm">
                             <input type="hidden" name="action" value="update_profile">
                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
@@ -1750,22 +1995,22 @@ if (isset($_GET['edit'])) {
                             <div class="row g-3 mb-4">
                                 <div class="col-md-12">
                                     <label class="form-label small">Full Name</label>
-                                    <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required>
+                                    <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Date of Birth</label>
-                                    <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>">
+                                    <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Gender</label>
-                                    <select name="gender" class="form-select">
+                                    <select name="gender" class="form-select" <?php echo $disabled_attr; ?>>
                                         <option value="Male" <?php echo ($edit_employee['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
                                         <option value="Female" <?php echo ($edit_employee['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
                                     </select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Civil Status</label>
-                                    <select name="civil_status" class="form-select">
+                                    <select name="civil_status" class="form-select" <?php echo $disabled_attr; ?>>
                                         <option value="Single" <?php echo ($edit_employee['civil_status'] ?? '') === 'Single' ? 'selected' : ''; ?>>Single</option>
                                         <option value="Married" <?php echo ($edit_employee['civil_status'] ?? '') === 'Married' ? 'selected' : ''; ?>>Married</option>
                                         <option value="Widowed" <?php echo ($edit_employee['civil_status'] ?? '') === 'Widowed' ? 'selected' : ''; ?>>Widowed</option>
@@ -1773,11 +2018,11 @@ if (isset($_GET['edit'])) {
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Nationality</label>
-                                    <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>">
+                                    <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label small">Photo</label>
-                                    <input type="file" name="photo" class="form-control" accept="image/*">
+                                    <input type="file" name="photo" class="form-control" accept="image/*" <?php echo $disabled_attr; ?>>
                                 </div>
                             </div>
                             
@@ -1785,19 +2030,21 @@ if (isset($_GET['edit'])) {
                             <div class="row g-3 mb-4">
                                 <div class="col-md-6">
                                     <label class="form-label small">Email</label>
-                                    <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>">
+                                    <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Phone</label>
-                                    <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>">
+                                    <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label small">Address</label>
-                                    <textarea name="address" class="form-control" rows="2"><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
+                                    <textarea name="address" class="form-control" rows="2" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
                                 </div>
                             </div>
                             
+                            <?php if (!$is_imported): ?>
                             <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                            <?php endif; ?>
                         </form>
                         
                         <hr class="my-4">
@@ -1861,6 +2108,11 @@ if (isset($_GET['edit'])) {
                 <!-- EMPLOYMENT TAB -->
                 <div class="tab-pane fade" id="tab_employment">
                     <div class="p-4">
+                        <?php if ($is_imported): ?>
+                            <div class="alert alert-warning mb-4">
+                                <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
+                            </div>
+                        <?php endif; ?>
                         <form method="POST" id="employmentForm" enctype="multipart/form-data">
                              <input type="hidden" name="action" value="update_profile">
                              <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
@@ -1869,22 +2121,22 @@ if (isset($_GET['edit'])) {
                              <div class="row g-3 mb-4">
                                 <div class="col-md-6">
                                     <label class="form-label small">Date Hired</label>
-                                    <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>">
+                                    <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Date Regularized</label>
-                                    <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>">
+                                    <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Status</label>
-                                    <select name="status" class="form-select">
+                                    <select name="status" class="form-select" <?php echo $disabled_attr; ?>>
                                         <option value="Active" <?php echo $edit_employee['status'] === 'Active' ? 'selected' : ''; ?>>Active</option>
                                         <option value="Inactive" <?php echo $edit_employee['status'] === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
                                     </select>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Contract Type</label>
-                                    <select name="contract" class="form-select">
+                                    <select name="contract" class="form-select" <?php echo $disabled_attr; ?>>
                                         <option value="Regular" <?php echo ($edit_employee['contract'] ?? '') === 'Regular' ? 'selected' : ''; ?>>Regular</option>
                                         <option value="Probationary" <?php echo ($edit_employee['contract'] ?? '') === 'Probationary' ? 'selected' : ''; ?>>Probationary</option>
                                         <option value="Contract" <?php echo ($edit_employee['contract'] ?? '') === 'Contract' ? 'selected' : ''; ?>>Contract</option>
@@ -1893,36 +2145,38 @@ if (isset($_GET['edit'])) {
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Department</label>
-                                    <input type="text" name="department" class="form-control" value="<?php echo htmlspecialchars($edit_employee['department']); ?>">
+                                    <input type="text" name="department" class="form-control" value="<?php echo htmlspecialchars($edit_employee['department']); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Position</label>
-                                    <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title']); ?>">
+                                    <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title']); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Manager/Supervisor</label>
-                                    <input type="text" name="manager" class="form-control" value="<?php echo htmlspecialchars($edit_employee['manager'] ?? ''); ?>">
+                                    <input type="text" name="manager" class="form-control" value="<?php echo htmlspecialchars($edit_employee['manager'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label small">Work Schedule</label>
-                                    <input type="text" name="work_schedule" class="form-control" value="<?php echo htmlspecialchars($edit_employee['work_schedule'] ?? ''); ?>">
+                                    <input type="text" name="work_schedule" class="form-control" value="<?php echo htmlspecialchars($edit_employee['work_schedule'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label small">Job Description</label>
-                                    <textarea name="job_description" class="form-control" rows="3"><?php echo htmlspecialchars($edit_employee['job_description'] ?? ''); ?></textarea>
+                                    <textarea name="job_description" class="form-control" rows="3" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['job_description'] ?? ''); ?></textarea>
                                 </div>
                              </div>
                              
                              <h6 class="text-uppercase text-secondary small fw-bold mb-3">Files</h6>
                              <div class="mb-3">
                                  <label class="form-label small">Resume</label>
-                                 <input type="file" name="resume_file" class="form-control form-control-sm">
+                                 <input type="file" name="resume_file" class="form-control form-control-sm" <?php echo $disabled_attr; ?>>
                                  <?php if (!empty($edit_employee['resume_file'])): ?>
                                      <small><a href="<?php echo UPLOAD_DIR . $edit_employee['resume_file']; ?>" target="_blank">View Current</a></small>
                                  <?php endif; ?>
                              </div>
                              
+                             <?php if (!$is_imported): ?>
                              <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                             <?php endif; ?>
                         </form>
                         
                         <hr class="my-4">
@@ -2082,6 +2336,43 @@ if (isset($_GET['edit'])) {
         </div>
     </div>
 
+    <!-- HR1 Fetch Modal -->
+    <div class="modal fade" id="hr1FetchModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">HR1 Employee Data</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="hr1Table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Position</th>
+                                    <th>Department</th>
+                                    <th>Email</th>
+                                    <th>Avatar</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hr1TableBody">
+                                <!-- Data will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="importHr1Btn" disabled>
+                        <i class="fas fa-file-import me-1"></i> Import All
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- View Employee Modal -->
     <div class="modal fade" id="viewEmployeeModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -2150,6 +2441,126 @@ if (isset($_GET['edit'])) {
         }
         
         // ... (Rest of existing scripts) ...
+
+        // Fetch HR1 Data Handler
+        const fetchBtn = document.getElementById('fetchHr1Btn');
+        const importBtn = document.getElementById('importHr1Btn');
+        let fetchedHR1Data = []; // Store fetched data
+
+        if (fetchBtn) {
+            fetchBtn.addEventListener('click', function() {
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Fetching...';
+                btn.disabled = true;
+                
+                // Disable import button while fetching
+                if (importBtn) importBtn.disabled = true;
+
+                fetch('/HR1/api/employee_data.php')
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        const tbody = document.getElementById('hr1TableBody');
+                        tbody.innerHTML = '';
+                        fetchedHR1Data = []; // Reset global data
+                        
+                        // Handle possible different response structures
+                        const employees = Array.isArray(data) ? data : (data.data || []);
+                        fetchedHR1Data = employees; // Store for import
+
+                        if (employees.length > 0) {
+                            // Enable import button
+                            if (importBtn) importBtn.disabled = false;
+
+                            employees.forEach(emp => {
+                                const row = document.createElement('tr');
+                                // Determine avatar - handle both full URLs and relative paths if needed
+                                let avatarHtml = '<span class="text-muted small">No Img</span>';
+                                if (emp.avatar_url) {
+                                    avatarHtml = `<img src="${emp.avatar_url}" style="width: 30px; height: 30px; border-radius: 50%; object-fit: cover;">`;
+                                }
+
+                                row.innerHTML = `
+                                    <td>${emp.id || '-'}</td>
+                                    <td>${emp.first_name || ''} ${emp.last_name || ''}</td>
+                                    <td>${emp.position || '-'}</td>
+                                    <td>${emp.department || '-'}</td>
+                                    <td>${emp.email || '-'}</td>
+                                    <td>${avatarHtml}</td>
+                                `;
+                                tbody.appendChild(row);
+                            });
+                            
+                            // Show modal
+                            const modal = new bootstrap.Modal(document.getElementById('hr1FetchModal'));
+                            modal.show();
+                        } else {
+                            showAlert('No data found from HR1 API', 'info');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching HR1 data:', error);
+                        showAlert('Failed to fetch data from HR1. Please check the API Endpoint.', 'danger');
+                    })
+                    .finally(() => {
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    });
+            });
+        }
+
+        // Import Handler
+        if (importBtn) {
+            importBtn.addEventListener('click', function() {
+                if (fetchedHR1Data.length === 0) {
+                    showAlert('No data to import', 'warning');
+                    return;
+                }
+
+                if (!confirm(`Are you sure you want to import ${fetchedHR1Data.length} employees? Duplicates (by email) will be skipped.`)) {
+                    return;
+                }
+
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Importing...';
+                btn.disabled = true;
+
+                const formData = new FormData();
+                formData.append('action', 'import_hr1_employees');
+                formData.append('employees', JSON.stringify(fetchedHR1Data));
+
+                fetch('', { // Post to self
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showAlert(data.message, 'success');
+                        // Close modal after delay and reload to show new employees
+                        setTimeout(() => {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showAlert(data.message || 'Import failed', 'danger');
+                        btn.innerHTML = originalText;
+                        btn.disabled = false;
+                    }
+                })
+                .catch(error => {
+                    console.error('Import error:', error);
+                    showAlert('An error occurred during import', 'danger');
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                });
+            });
+        }
 
 
         // Photo preview

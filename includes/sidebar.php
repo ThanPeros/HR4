@@ -1,4 +1,7 @@
 <?php
+// Include Auto-Responsive System for all pages
+require_once __DIR__ . '/../responsive/auto_responsive.php';
+
             ob_start(); // Start output buffering at the VERY beginning
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -642,6 +645,36 @@ function getModulePath($basePath, $moduleFile)
         body.dark-mode .current-time {
             color: var(--text-light);
         }
+        @media (max-width: 768px) {
+            /* Hide Time and last separator on Mobile to prevent squishing */
+            #currentTime, 
+            .header-title .separator:last-of-type {
+                display: none !important;
+            }
+            
+            /* Adjust Font Sizes for Mobile */
+            .header-title {
+                font-size: 0.9rem !important; /* Smaller base size */
+                gap: 5px !important;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            .header-title span {
+                 font-size: 0.85rem !important;
+            }
+            
+            .dashboard-header {
+                padding: 0 0.5rem !important; /* Reduce padding */
+            }
+            
+            .hamburger {
+                padding: 0.25rem !important;
+                width: 32px !important;
+                height: 32px !important;
+            }
+        }
     </style>
 </head>
 
@@ -917,14 +950,7 @@ function getModulePath($basePath, $moduleFile)
             <div class="submenu" id="aiIntelligence">
 
 
-                <?php
-                $aiPredictPath = getModulePath('../ai/', 'ai.php');
-                $aiPredictClass = ($aiPredictPath === '#') ? 'missing-file' : '';
-                ?>
-                <a href="<?php echo $aiPredictPath; ?>" class="<?php echo $aiPredictClass; ?>"
-                    <?php if ($aiPredictPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                    <i class="fas fa-chart-line"></i> Predictive Analytics
-                </a>
+
 
                 <?php
                 $aiAssistantPath = getModulePath('../ai/', 'ai_assistant.php');
@@ -1027,6 +1053,19 @@ function getModulePath($basePath, $moduleFile)
             if(clockEl) clockEl.textContent = timeString;
             if(headerTimeEl) headerTimeEl.textContent = timeString;
         }
+
+        // Auto-close sidebar on mobile load
+        function checkMobileView() {
+            if (window.innerWidth < 768) {
+                document.body.classList.remove('sidebar-open');
+            }
+        }
+        
+        // Run on load
+        checkMobileView();
+        
+        // Optional: Run on resize to adapt dynamically
+        window.addEventListener('resize', checkMobileView);
 
         setInterval(updateClock, 1000);
         updateClock();

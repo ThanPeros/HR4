@@ -181,3 +181,8 @@
 2026-02-10 14:23:44 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Offline Gacha Login
 2026-02-10 14:24:41 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
 2026-02-10 14:29:02 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-15 08:04:44 - IP: ::1 - Username: hr_manager - Status: FAILED - Details: Invalid credentials
+2026-02-15 08:04:57 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-15 10:00:50 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-15 10:04:36 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
+2026-02-15 13:04:54 - IP: ::1 - Username: hr_manager - Status: SUCCESS - Details: Login successful (hashed password)
