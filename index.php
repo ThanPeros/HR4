@@ -6,13 +6,10 @@ require_once __DIR__ . '/responsive/auto_responsive.php';
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-
-// Include configuration files with error handling
-$config_files = ['config/db.php', 'security/session_manager.php'];
-foreach ($config_files as $file) {
-    if (file_exists($file)) {
-        include $file;
-    }
+require_once 'config/db.php';
+// Include security session manager
+if (file_exists('security/session_manager.php')) {
+    include 'security/session_manager.php';
 }
 
 // Include PHPMailer from vendor folder

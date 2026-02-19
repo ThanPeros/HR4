@@ -1681,58 +1681,60 @@ if (isset($_GET['edit'])) {
             <?php unset($_SESSION['message'], $_SESSION['message_type']); ?>
         <?php endif; ?>
 
-        <!-- Google Gemini Highlights -->
-        <div class="card mb-4 border-0 shadow-sm" style="border-left: 5px solid #4e73df !important; background: linear-gradient(to right, #ffffff, #f8f9fc);">
+        <!-- Smart HR Intelligence Engine -->
+        <div class="card mb-4 border-0 shadow-sm" style="border-left: 5px solid #10a37f !important; background: linear-gradient(to right, #ffffff, #f0fdf4);">
             <div class="card-body">
                 <div class="row align-items-center">
                     <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
-                            Google Gemini (Good for document + data analysis)
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                            OpenAI (GPT Models) – Smart HR Intelligence Engine
                         </div>
-                        <div class="h5 mb-2 font-weight-bold text-gray-800">Google (Gemini AI)</div>
+                        <div class="h5 mb-2 font-weight-bold text-gray-800">Smart HR Intelligence</div>
                         <div class="text-muted small">
-                            <strong class="d-block mb-1">Why it’s useful:</strong>
+                            <strong class="d-block mb-1">AI Capabilities:</strong>
                             <ul class="mb-0" style="columns: 2;">
-                                <li><i class="fas fa-file-contract text-primary me-2"></i>Analyze uploaded contracts</li>
-                                <li><i class="fas fa-file-pdf text-danger me-2"></i>Extract information from PDFs</li>
-                                <li><i class="fas fa-exclamation-triangle text-warning me-2"></i>Detect missing fields in employee records</li>
-                                <li><i class="fas fa-check-double text-success me-2"></i>Check inconsistencies in employee data</li>
+                                <li><i class="fas fa-search text-danger me-2"></i>Missing Documents Detector</li>
+                                <li><i class="fas fa-user-check text-primary me-2"></i>Employee Profile Analyzer</li>
+                                <li><i class="fas fa-chart-line text-info me-2"></i>Workforce Insights Generator</li>
+                                <li><i class="fas fa-brain text-warning me-2"></i>Risk & Tenure Analysis</li>
                             </ul>
                         </div>
                         <div class="mt-3">
-                            <button class="btn btn-primary btn-sm" onclick="runGeminiAudit()">
-                                <i class="fas fa-magic me-2"></i>Run Smart Audit
+                            <button class="btn btn-success btn-sm me-2" onclick="runSmartAudit()">
+                                <i class="fas fa-file-contract me-2"></i>Scan Missing Docs
                             </button>
-                            <small class="text-muted ms-2 fst-italic">Powered by Gemini AI Logic</small>
+                            <button class="btn btn-info btn-sm text-white" onclick="generateInsights()">
+                                <i class="fas fa-chart-pie me-2"></i>Generate Workforce Insights
+                            </button>
                         </div>
                     </div>
                     <div class="col-auto">
-                        <i class="fas fa-robot fa-3x text-gray-300"></i>
+                        <i class="fas fa-robot fa-3x text-success"></i>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Gemini Audit Modal -->
-        <div class="modal fade" id="geminiAuditModal" tabindex="-1" aria-hidden="true">
+        <!-- Smart Audit Modal -->
+        <div class="modal fade" id="smartAuditModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
-                    <div class="modal-header bg-gradient-primary text-white">
-                        <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI-Powered Compliance Audit</h5>
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="fas fa-search me-2"></i>Missing Documents Detector</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
                         <div id="auditLoading" class="text-center py-5">
-                            <div class="spinner-border text-primary" role="status">
+                            <div class="spinner-border text-success" role="status">
                                 <span class="visually-hidden">Loading...</span>
                             </div>
-                            <p class="mt-3 text-muted">Analyzing employee records and documents...</p>
+                            <p class="mt-3 text-muted">AI is scanning employee records for compliance...</p>
                         </div>
                         <div id="auditResults" style="display:none;">
-                            <div class="alert alert-info d-flex align-items-center mb-3">
-                                <i class="fas fa-info-circle me-2"></i>
+                            <div class="alert alert-warning d-flex align-items-center mb-3">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
                                 <div>
-                                    Analysis Complete. Found <strong id="issueCount">0</strong> potential issues across <strong id="empCount">0</strong> active profiles.
+                                    Scan Complete. Found <strong id="issueCount">0</strong> issues across <strong id="empCount">0</strong> active profiles.
                                 </div>
                             </div>
                             <div class="table-responsive">
@@ -1740,85 +1742,216 @@ if (isset($_GET['edit'])) {
                                     <thead class="table-light">
                                         <tr>
                                             <th>Employee</th>
-                                            <th>Detected Issues</th>
+                                            <th>Detected Issues (AI Analysis)</th>
                                             <th class="text-end">Action</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="auditTableBody">
-                                        <!-- content -->
-                                    </tbody>
+                                    <tbody id="auditTableBody"></tbody>
                                 </table>
                             </div>
                         </div>
                         <div id="auditEmpty" style="display:none;" class="text-center py-5">
                             <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
                             <h5>All Clear!</h5>
-                            <p class="text-muted">No missing documents or data inconsistencies found.</p>
+                            <p class="text-muted">No missing documents or compliance risks found.</p>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights Modal -->
+        <div class="modal fade" id="insightsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title"><i class="fas fa-chart-line me-2"></i>Workforce Insights Generator</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="insightsLoading" class="text-center py-5">
+                            <div class="spinner-border text-info" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3 text-muted">AI is analyzing workforce data patterns...</p>
+                        </div>
+                        <div id="insightsContent" style="display:none;">
+                            <div class="card mb-3 border-left-info shadow-sm">
+                                <div class="card-body">
+                                    <h6 class="font-weight-bold text-info">Workforce Summary</h6>
+                                    <p id="wfSummary" class="mb-0"></p>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-3 shadow-sm">
+                                        <div class="card-header bg-light font-weight-bold">Skill Gaps Detected</div>
+                                        <ul id="skillGaps" class="list-group list-group-flush small"></ul>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card mb-3 shadow-sm">
+                                        <div class="card-header bg-light font-weight-bold">Risk Alerts</div>
+                                        <ul id="riskAlerts" class="list-group list-group-flush small"></ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Analysis Modal -->
+        <div class="modal fade" id="profileAnalysisModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title"><i class="fas fa-user-check me-2"></i>Employee Profile Analyzer</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="profileLoading" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-3 text-muted">AI is analyzing employee background and potential...</p>
+                        </div>
+                        <div id="profileContent" style="display:none;">
+                            <h6 class="fw-bold text-dark mb-2">Background Summary</h6>
+                            <p id="paSummary" class="small text-muted mb-3 bg-light p-2 rounded"></p>
+                            
+                            <h6 class="fw-bold text-dark mb-2">Inconsistencies</h6>
+                            <div id="paInconsistencies" class="mb-3"></div>
+                            
+                            <h6 class="fw-bold text-dark mb-2">Training Suggestions</h6>
+                            <ul id="paTraining" class="list-group list-group-flush small mb-3"></ul>
+                            
+                            <div class="alert alert-success mb-0">
+                                <h6 class="alert-heading fw-bold mb-1"><i class="fas fa-award me-1"></i> Promotion Readiness</h6>
+                                <p class="mb-0 small">Level: <strong id="paReadiness"></strong> - <span id="paReadinessReason"></span></p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <script>
-        function runGeminiAudit() {
-            const modal = new bootstrap.Modal(document.getElementById('geminiAuditModal'));
+        function runSmartAudit() {
+            const modal = new bootstrap.Modal(document.getElementById('smartAuditModal'));
             modal.show();
-            
             document.getElementById('auditLoading').style.display = 'block';
             document.getElementById('auditResults').style.display = 'none';
             document.getElementById('auditEmpty').style.display = 'none';
 
-            fetch('../api/gemini_audit.php') // Adjust path if needed
-                .then(response => response.json())
+            fetch('../api/smart_hr_engine.php?action=detect_missing')
+                .then(r => r.json())
                 .then(data => {
                     document.getElementById('auditLoading').style.display = 'none';
-                    
-                    if (data.success) {
-                        if (data.issues.length > 0) {
+                    if (data.success && data.data) {
+                        const { issues, stats } = data.data;
+                        if (issues.length > 0) {
                             document.getElementById('auditResults').style.display = 'block';
-                            document.getElementById('issueCount').textContent = data.stats.issues_found;
-                            document.getElementById('empCount').textContent = data.stats.analyzed;
-                            
+                            document.getElementById('issueCount').textContent = stats.issues_found;
+                            document.getElementById('empCount').textContent = stats.analyzed;
                             const tbody = document.getElementById('auditTableBody');
                             tbody.innerHTML = '';
-                            
-                            data.issues.forEach(issue => {
-                                let issuesHtml = '';
-                                issue.findings.forEach(f => {
-                                    let badgeClass = f.severity === 'critical' ? 'bg-danger' : (f.severity === 'high' ? 'bg-warning text-dark' : 'bg-info text-dark');
-                                    issuesHtml += `<div class="mb-1"><span class="badge ${badgeClass} me-2">${f.type}</span>${f.msg}</div>`;
+                            issues.forEach(i => {
+                                let html = '';
+                                i.findings.forEach(f => {
+                                    let cls = f.severity === 'high' ? 'bg-danger' : (f.severity === 'medium' ? 'bg-warning text-dark' : 'bg-info text-dark');
+                                    html += `<div class="mb-1"><span class="badge ${cls} me-2">${f.type}</span>${f.msg}</div>`;
                                 });
-
-                                const tr = document.createElement('tr');
-                                tr.innerHTML = `
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="fw-bold text-dark">${issue.name}</div>
-                                        </div>
-                                        <small class="text-muted">${issue.employee_id} | ${issue.department}</small>
-                                    </td>
-                                    <td>${issuesHtml}</td>
-                                    <td class="text-end">
-                                        <a href="?edit=${issue.id}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i> Fix</a>
-                                    </td>
-                                `;
-                                tbody.appendChild(tr);
+                                tbody.innerHTML += `<tr>
+                                    <td><div class="fw-bold">${i.name}</div><small class="text-muted">${i.department}</small></td>
+                                    <td>${html}</td>
+                                    <td class="text-end"><a href="?edit=${i.id}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i> Fix</a></td>
+                                </tr>`;
                             });
                         } else {
                             document.getElementById('auditEmpty').style.display = 'block';
                         }
                     } else {
-                        alert('Error running audit: ' + data.message);
+                        alert(data.message || 'Audit failed.');
                     }
                 })
-                .catch(error => {
-                    console.error('Error:', error);
+                .catch(e => {
+                    console.error(e);
                     document.getElementById('auditLoading').style.display = 'none';
-                    alert('An error occurred while running the audit.');
+                    alert('Error connecting to Smart HR Engine.');
+                });
+        }
+
+        function generateInsights() {
+            const modal = new bootstrap.Modal(document.getElementById('insightsModal'));
+            modal.show();
+            document.getElementById('insightsLoading').style.display = 'block';
+            document.getElementById('insightsContent').style.display = 'none';
+
+            fetch('../api/smart_hr_engine.php?action=generate_insights')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('insightsLoading').style.display = 'none';
+                    if (data.success && data.data) {
+                        document.getElementById('insightsContent').style.display = 'block';
+                        const d = data.data;
+                        document.getElementById('wfSummary').textContent = d.workforce_summary;
+                        
+                        const gapsList = document.getElementById('skillGaps');
+                        gapsList.innerHTML = '';
+                        d.skill_gaps.forEach(s => gapsList.innerHTML += `<li class="list-group-item bg-transparent"><i class="fas fa-exclamation-circle text-warning me-2"></i>${s}</li>`);
+                        
+                        const riskList = document.getElementById('riskAlerts');
+                        riskList.innerHTML = '';
+                        d.risk_alerts.forEach(s => riskList.innerHTML += `<li class="list-group-item bg-transparent"><i class="fas fa-bell text-danger me-2"></i>${s}</li>`);
+                    }
+                });
+        }
+        
+        function analyzeProfile(id) {
+            const modal = new bootstrap.Modal(document.getElementById('profileAnalysisModal'));
+            modal.show();
+            document.getElementById('profileLoading').style.display = 'block';
+            document.getElementById('profileContent').style.display = 'none';
+
+            fetch(`../api/smart_hr_engine.php?action=analyze_profile&employee_id=${id}`)
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('profileLoading').style.display = 'none';
+                    if (data.success && data.data) {
+                        document.getElementById('profileContent').style.display = 'block';
+                        const d = data.data;
+                        document.getElementById('paSummary').textContent = d.summary;
+                        
+                        const inc = document.getElementById('paInconsistencies');
+                        inc.innerHTML = '';
+                        if(d.inconsistencies.length > 0) {
+                            d.inconsistencies.forEach(i => inc.innerHTML += `<div class="text-danger small"><i class="fas fa-times me-1"></i>${i}</div>`);
+                        } else {
+                            inc.innerHTML = '<div class="text-success small"><i class="fas fa-check me-1"></i>No inconsistencies detected.</div>';
+                        }
+                        
+                        const train = document.getElementById('paTraining');
+                        train.innerHTML = '';
+                        d.training_suggestions.forEach(t => train.innerHTML += `<li class="list-group-item p-1 bg-transparent"><i class="fas fa-lightbulb text-warning me-2"></i>${t}</li>`);
+                        
+                        // Promotion Readiness
+                        const readinessElem = document.getElementById('paReadiness');
+                        const reasonElem = document.getElementById('paReadinessReason');
+                        if (readinessElem && reasonElem && d.promotion_readiness) {
+                            readinessElem.textContent = d.promotion_readiness.level;
+                            reasonElem.textContent = d.promotion_readiness.reason;
+                        }
+                    } else {
+                         document.getElementById('profileContent').style.display = 'block';
+                         document.getElementById('paSummary').textContent = data.message || 'Analysis failed.';
+                    }
+                })
+                .catch(e => {
+                    console.error(e);
+                    document.getElementById('profileLoading').style.display = 'none';
+                    alert('Error connecting to Smart HR Engine: ' + e.message);
                 });
         }
         </script>
@@ -1915,6 +2048,9 @@ if (isset($_GET['edit'])) {
                                                     </span>
                                                 </td>
                                                 <td>
+                                                    <button type="button" class="btn btn-sm btn-outline-dark me-1" onclick="analyzeProfile(<?php echo $employee['id']; ?>)">
+                                                        <i class="fas fa-brain"></i> Analyze
+                                                    </button>
                                                     <button type="button" class="btn btn-sm btn-outline-info view-employee me-1" data-id="<?php echo $employee['id']; ?>">
                                                         <i class="fas fa-eye"></i> View
                                                     </button>

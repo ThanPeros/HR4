@@ -1,7 +1,19 @@
 <?php
 // core-human/print-report.php
 session_start();
-include '../config/db.php';
+
+// Reliable Database Connection
+require_once '../config/db.php';
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    global $conn;
+}
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    // Fallback connection if included file didn't expose $conn
+    $conn = new mysqli('localhost', 'root', '', 'dummy_hr4');
+    if ($conn->connect_error) {
+        die("Database connection failed: " . $conn->connect_error);
+    }
+}
 
 // Get filter parameters (same as report.php)
 $department_filter = isset($_GET['department']) ? $conn->real_escape_string($_GET['department']) : '';
@@ -46,12 +58,16 @@ if (!empty($where_conditions)) {
 // Fetch employees
 $employees_sql = "SELECT * FROM employees $where_clause ORDER BY department, name";
 $stmt = $conn->prepare($employees_sql);
+
+// Bind params if any
 if (!empty($query_params)) {
     $stmt->bind_param($types, ...$query_params);
 }
+
 $stmt->execute();
 $result = $stmt->get_result();
 $employees = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+$stmt->close();
 $conn->close();
 ?>
 <!DOCTYPE html>
@@ -139,8 +155,9 @@ $conn->close();
             }, 500);
             
             // Close the window after printing (or cancelling)
+            // Note: onafterprint support varies, but works in most modern browsers
             window.onafterprint = function() {
-                window.close();
+                // window.close(); 
             };
         }
     </script>
@@ -163,14 +180,13 @@ $conn->close();
                 <th>Status</th>
                 <th>Salary</th>
                 <th>Hire Date</th>
-                <th>Age</th>
             </tr>
         </thead>
         <tbody>
             <?php if (count($employees) > 0): ?>
                 <?php foreach ($employees as $emp): ?>
                     <tr>
-                        <td><?php echo htmlspecialchars($emp['id']); ?></td>
+                        <td><?php echo htmlspecialchars($emp['employee_id'] ?? $emp['id']); ?></td>
                         <td><b><?php echo htmlspecialchars($emp['name']); ?></b></td>
                         <td><?php echo htmlspecialchars($emp['department']); ?></td>
                         <td><?php echo htmlspecialchars($emp['job_title']); ?></td>
@@ -182,19 +198,16 @@ $conn->close();
                             elseif ($c === 'Probationary') $cls = 'badge-probation';
                             elseif ($c === 'Contract') $cls = 'badge-contract';
                             elseif ($c === 'Project-Based') $cls = 'badge-part-time';
+                            echo '<span class="employment-badge ' . $cls . '">' . htmlspecialchars($c) . '</span>';
                             ?>
-                            <span class="employment-badge <?php echo $cls; ?>">
-                                <?php echo htmlspecialchars($c); ?>
-                            </span>
                         </td>
                         <td><?php echo htmlspecialchars($emp['status']); ?></td>
-                        <td><?php echo number_format($emp['salary'], 2); ?></td>
-                        <td><?php echo date('M d, Y', strtotime($emp['hire_date'])); ?></td>
-                        <td><?php echo htmlspecialchars($emp['age']); ?></td>
+                        <td><?php echo number_format((float)($emp['salary'] ?? 0), 2); ?></td>
+                        <td><?php echo !empty($emp['date_hired']) ? date('M d, Y', strtotime($emp['date_hired'])) : '-'; ?></td>
                     </tr>
                 <?php endforeach; ?>
             <?php else: ?>
-                <tr><td colspan="9" style="text-align:center">No records found.</td></tr>
+                <tr><td colspan="8" style="text-align:center">No records found.</td></tr>
             <?php endif; ?>
         </tbody>
     </table>

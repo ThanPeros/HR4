@@ -1,7 +1,18 @@
 <?php
 // core-human/contract-employment.php
 
-include '../config/db.php';
+// Reliable Database Connection
+require_once '../config/db.php';
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    global $conn;
+}
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    // Fallback connection if included file didn't expose $conn
+    $conn = new mysqli('localhost', 'root', '', 'dummy_hr4');
+    if ($conn->connect_error) {
+        die("Database connection failed: " . $conn->connect_error);
+    }
+}
 
 // --- AJAX HANDLER (Moved to Top to prevent HTML pollution) --- //
 if (isset($_GET['action']) && $_GET['action'] === 'get_history') {

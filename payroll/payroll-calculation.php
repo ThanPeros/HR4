@@ -322,7 +322,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $ph = ($monthlyRate * 0.025) / 2;
                 $pagibig = 100;
                 $tax = ($gross - ($sss + $ph + $pagibig)) * 0.10; 
-                $hmo = 250; 
+                
+                // HMO Calculation (Dynamic)
+                $hmo = 0;
+                $hmoProvider = 'HMO';
+                $hmoPlanName = 'Standard';
+                
+                $hmoStmt = $pdo->prepare("SELECT p.employee_share, p.plan_name, pr.provider_name 
+                                          FROM employee_hmo_enrollments e 
+                                          JOIN hmo_plans p ON e.plan_id = p.id 
+                                          JOIN hmo_providers pr ON p.provider_id = pr.id
+                                          WHERE e.employee_id = ? AND e.status = 'Active' 
+                                          LIMIT 1");
+                $hmoStmt->execute([$emp['id']]);
+                if ($hmoRow = $hmoStmt->fetch()) {
+                    $hmo = $hmoRow['employee_share'];
+                    $hmoProvider = $hmoRow['provider_name'];
+                    $hmoPlanName = $hmoRow['plan_name'];
+                } 
                 
                 $subTotalDed = $sss + $ph + $pagibig + $tax + $hmo + $loanDeduction;
                 
@@ -333,7 +350,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $breakdown = [
                     'basic' => $basic, 'ot' => $otPay, 'allowance' => $allowance,
                     'sss' => $sss, 'philhealth' => $ph, 'pagibig' => $pagibig,
-                    'tax' => $tax, 'hmo' => $hmo, 'loans' => $loanDeduction
+                    'tax' => $tax, 'hmo' => $hmo, 'loans' => $loanDeduction,
+                    'hmo_provider' => $hmoProvider, 'hmo_plan' => $hmoPlanName
                 ];
                 
                 // Save Record (Added deduction_loans to query)

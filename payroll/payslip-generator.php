@@ -79,18 +79,26 @@ $periodInfo = null;
 try {
     if ($recordId) {
         // Fetch Single Record by Transaction ID
-        $stmt = $pdo->prepare("SELECT pr.*, e.job_title, e.date_hired, e.tin_no, e.sss_no, e.philhealth_no, e.pagibig_no 
+        $stmt = $pdo->prepare("SELECT pr.*, e.job_title, e.date_hired, e.tin_no, e.sss_no, e.philhealth_no, e.pagibig_no,
+                               hmo_p.plan_name, hmo_prov.provider_name
                                FROM payroll_records pr 
                                LEFT JOIN employees e ON pr.employee_id = e.id 
+                               LEFT JOIN employee_hmo_enrollments hmo_e ON e.id = hmo_e.employee_id AND hmo_e.status = 'Active'
+                               LEFT JOIN hmo_plans hmo_p ON hmo_e.plan_id = hmo_p.id
+                               LEFT JOIN hmo_providers hmo_prov ON hmo_p.provider_id = hmo_prov.id
                                WHERE pr.id = ?");
         $stmt->execute([$recordId]);
         $records[] = $stmt->fetch(PDO::FETCH_ASSOC);
     } elseif ($periodId) {
         $empId = $_GET['employee_id'] ?? null;
         
-        $query = "SELECT pr.*, e.job_title, e.date_hired, e.tin_no, e.sss_no, e.philhealth_no, e.pagibig_no 
+        $query = "SELECT pr.*, e.job_title, e.date_hired, e.tin_no, e.sss_no, e.philhealth_no, e.pagibig_no,
+                  hmo_p.plan_name, hmo_prov.provider_name
                   FROM payroll_records pr 
                   LEFT JOIN employees e ON pr.employee_id = e.id 
+                  LEFT JOIN employee_hmo_enrollments hmo_e ON e.id = hmo_e.employee_id AND hmo_e.status = 'Active'
+                  LEFT JOIN hmo_plans hmo_p ON hmo_e.plan_id = hmo_p.id
+                  LEFT JOIN hmo_providers hmo_prov ON hmo_p.provider_id = hmo_prov.id
                   WHERE pr.payroll_period_id = ?";
         $params = [$periodId];
         
@@ -329,9 +337,10 @@ if (empty($records) || !$records[0]) {
         $phil = $details['philhealth_deduction'] ?? ($rec['deduction_philhealth'] ?? 0);
         $pagibig = $details['pagibig_deduction'] ?? ($rec['deduction_pagibig'] ?? 0);
         $tax = $details['withholding_tax'] ?? ($details['tax_deduction'] ?? ($rec['deduction_tax'] ?? 0));
+        $hmoVal = $details['hmo'] ?? ($rec['deduction_hmo'] ?? 0);
         
         // Calculate other deductions if any
-        $total_statutory = $sss + $phil + $pagibig + $tax;
+        $total_statutory = $sss + $phil + $pagibig + $tax + $hmoVal;
         $other_deductions = $rec['total_deductions'] - $total_statutory;
     ?>
     
@@ -427,6 +436,17 @@ if (empty($records) || !$records[0]) {
                     <span>Withholding Tax</span>
                     <span><?php echo number_format($tax, 2); ?></span>
                 </div>
+
+                <?php 
+                    if ($hmoVal > 0): 
+                        $hmoProv = $details['hmo_provider'] ?? ($rec['provider_name'] ?? 'HMO');
+                        $hmoPlan = $details['hmo_plan'] ?? ($rec['plan_name'] ?? '');
+                ?>
+                <div class="item-row">
+                    <span>HMO (<?php echo htmlspecialchars($hmoProv . ($hmoPlan ? ' - ' . $hmoPlan : '')); ?>)</span>
+                    <span><?php echo number_format($hmoVal, 2); ?></span>
+                </div>
+                <?php endif; ?>
                 
                 <?php if ($other_deductions > 0.01): ?>
                 <div class="item-row">

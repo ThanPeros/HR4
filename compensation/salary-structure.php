@@ -1,6 +1,17 @@
 <?php
 // compensation/salary-structure.php
-include '../config/db.php';
+// Reliable Database Connection
+require_once '../config/db.php';
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    global $conn;
+}
+if (!isset($conn) || !($conn instanceof mysqli)) {
+    // Fallback connection if included file didn't expose $conn
+    $conn = new mysqli('localhost', 'hr4_hr_dummyhr4', 'dummyhr4', 'hr4_dummyhr4');
+    if ($conn->connect_error) {
+        die("Database connection failed: " . $conn->connect_error);
+    }
+}
 include '../includes/sidebar.php';
 
 // Initialize theme
@@ -83,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $min = floatval($_POST['min_salary']);
         $mid = floatval($_POST['mid_salary']);
         $max = floatval($_POST['max_salary']);
-        $steps = intval($_POST['step_count']);
+        $steps = 5; // Default (hidden from UI)
         $desc = $conn->real_escape_string($_POST['description']);
         $status = $conn->real_escape_string($_POST['status']);
 
@@ -312,7 +323,6 @@ $grades = $conn->query("SELECT * FROM salary_grades ORDER BY CAST(SUBSTRING(grad
                             <th>Monthly Range (Min - Max)</th>
                             <th>Daily Rate (Est.)</th>
                             <th>Hourly Rate (Est.)</th>
-                            <th>Steps</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -347,7 +357,6 @@ $grades = $conn->query("SELECT * FROM salary_grades ORDER BY CAST(SUBSTRING(grad
                                         <?php endif; ?>
                                     </td>
                                     <td class="currency">₱<?php echo number_format($hourly, 2); ?></td>
-                                    <td><?php echo $row['step_count']; ?></td>
                                     <td>
                                         <span class="badge <?php echo $row['status']=='Active' ? 'bg-success' : 'bg-secondary'; ?>">
                                             <?php echo $row['status']; ?>
@@ -411,11 +420,7 @@ $grades = $conn->query("SELECT * FROM salary_grades ORDER BY CAST(SUBSTRING(grad
                     </div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Step Count</label>
-                            <input type="number" class="form-control" name="step_count" id="step_count" value="5">
-                        </div>
-                        <div class="col-md-6">
+                        <div class="col-md-12">
                             <label class="form-label">Status</label>
                             <select class="form-select" name="status" id="status">
                                 <option value="Active">Active</option>
@@ -469,7 +474,7 @@ $grades = $conn->query("SELECT * FROM salary_grades ORDER BY CAST(SUBSTRING(grad
         document.getElementById('min_salary').value = data.min_salary;
         document.getElementById('mid_salary').value = data.mid_salary;
         document.getElementById('max_salary').value = data.max_salary;
-        document.getElementById('step_count').value = data.step_count;
+        // document.getElementById('step_count').value = data.step_count;
         document.getElementById('status').value = data.status;
         document.getElementById('description').value = data.description;
         
