@@ -48,7 +48,8 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `address` TEXT NULL AFTER `phone`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `photo` VARCHAR(255) NULL AFTER `address`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `gender` VARCHAR(20) NULL AFTER `photo`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `age` INT(3) NULL AFTER `gender`",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `age` INT(3) NULL AFTER `gender` COLLATE utf8mb4_general_ci",
+            "ALTER TABLE `employees` MODIFY COLUMN `age` INT(3) NULL DEFAULT NULL",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `employee_id` VARCHAR(20) NULL AFTER `id`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_date` DATE NULL AFTER `age`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_place` VARCHAR(100) NULL AFTER `birth_date`",
@@ -62,7 +63,10 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `passport_no` VARCHAR(20) NULL AFTER `pagibig_no`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `contract` VARCHAR(50) NULL AFTER `job_title`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_hired` DATE NULL AFTER `contract`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_regularized` DATE NULL AFTER `date_hired`",
+            "ALTER TABLE `employees` MODIFY COLUMN `date_hired` DATE NULL DEFAULT NULL",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hire_date` DATE NULL AFTER `date_hired`",
+            "ALTER TABLE `employees` MODIFY COLUMN `hire_date` DATE NULL DEFAULT NULL",
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_regularized` DATE NULL AFTER `hire_date`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `resume_file` VARCHAR(255) NULL AFTER `photo`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `diploma_file` VARCHAR(255) NULL AFTER `resume_file`",
             
@@ -440,6 +444,7 @@ function updateEmployee($id, $data)
         'pagibig_no',
         'passport_no',
         'date_hired',
+        'hire_date',
         'date_regularized',
         'manager',
         'work_schedule',
@@ -1200,15 +1205,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         $stmtCheck = $pdo->prepare("SELECT id FROM employees WHERE email = ?");
                         
-                        $common_fields = "`name`=?, `job_title`=?, `department`=?, `salary`=?, `date_hired`=?, 
-                                          `phone`=?, `birth_date`=?, `birth_place`=?, `gender`=?, `civil_status`=?, 
+                        $common_fields = "`name`=?, `job_title`=?, `department`=?, `salary`=?, `date_hired`=?, `hire_date`=?, 
+                                          `phone`=?, `birth_date`=?, `age`=?, `birth_place`=?, `gender`=?, `civil_status`=?, 
                                           `nationality`=?, `address`=?, `sss_no`=?, `philhealth_no`=?, `pagibig_no`=?, `tin_no`=?,
                                           `status`=?, `contract`=?, `work_schedule`=?, `bank_name`=?, `bank_account_no`=?, 
                                           `hmo_provider`=?, `hmo_number`=?, `leave_credits_vacation`=?, `leave_credits_sick`=?, `manager`=?";
                                           
                         $stmtUpdate = $pdo->prepare("UPDATE employees SET $common_fields WHERE email = ?");
                         
-                        $stmtInsert = $pdo->prepare("INSERT INTO employees (`name`, `job_title`, `department`, `salary`, `date_hired`, `phone`, `birth_date`, `birth_place`, `gender`, `civil_status`, `nationality`, `address`, `sss_no`, `philhealth_no`, `pagibig_no`, `tin_no`, `status`, `contract`, `work_schedule`, `bank_name`, `bank_account_no`, `hmo_provider`, `hmo_number`, `leave_credits_vacation`, `leave_credits_sick`, `manager`, `employee_id`, `email`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmtInsert = $pdo->prepare("INSERT INTO employees (`name`, `job_title`, `department`, `salary`, `date_hired`, `hire_date`, `phone`, `birth_date`, `age`, `birth_place`, `gender`, `civil_status`, `nationality`, `address`, `sss_no`, `philhealth_no`, `pagibig_no`, `tin_no`, `status`, `contract`, `work_schedule`, `bank_name`, `bank_account_no`, `hmo_provider`, `hmo_number`, `leave_credits_vacation`, `leave_credits_sick`, `manager`, `employee_id`, `email`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                         
                         foreach ($employees_to_import as $emp) {
                             $email = $emp['email'] ?? '';
@@ -1244,6 +1249,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $leave_credits_sick = $emp['leave_credits_sick'] ?? 0;
                             $manager = $emp['supervisor'] ?? null;
                             
+                            // Calculate age from birth_date
+                            $age = null;
+                            if ($birth_date) {
+                                try {
+                                    $dob = new DateTime($birth_date);
+                                    $now = new DateTime();
+                                    $age = $now->diff($dob)->y;
+                                } catch (Exception $e) {
+                                    $age = null;
+                                }
+                            }
+                            
                             $stmtCheck->execute([$email]);
                             $row = $stmtCheck->fetch();
                             
@@ -1251,10 +1268,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             if ($row) {
                                 $db_employee_id = $row['id'];
-                                $stmtUpdate->execute([$name, $job_title, $dept, $salary, $date_hired, $phone, $birth_date, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $email]);
+                                $stmtUpdate->execute([$name, $job_title, $dept, $salary, $date_hired, $date_hired, $phone, $birth_date, $age, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $email]);
                                 $skipped_count++;
                             } else {
-                                $stmtInsert->execute([$name, $job_title, $dept, $salary, $date_hired, $phone, $birth_date, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $emp_id, $email]);
+                                $stmtInsert->execute([$name, $job_title, $dept, $salary, $date_hired, $date_hired, $phone, $birth_date, $age, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $emp_id, $email]);
                                 $db_employee_id = $pdo->lastInsertId();
                                 $imported_count++;
                             }
@@ -2897,7 +2914,11 @@ if (isset($_GET['edit'])) {
                 // Disable import button while fetching
                 if (importBtn) importBtn.disabled = true;
 
-                fetch('http://localhost/HR1/api/employee_data.php?t=' + new Date().getTime())
+                const protocol = window.location.protocol;
+                const host = window.location.host;
+                const apiUrl = `${protocol}//${host}/HR1/api/employee_data.php?t=${new Date().getTime()}`;
+
+                fetch(apiUrl)
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('Network response was not ok');

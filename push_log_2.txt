@@ -1,26 +1,21 @@
-﻿branch 'main' set up to track 'origin/main'.
-git : Pushing to https://git
-hub.com/ThanPeros/thanperos_
-hr4.git
+﻿git : error: src refspec 
+master does not match any
 At line:1 char:1
-+ git push -v -u origin 
-main 2>&1 | Out-File 
--Encoding utf8 push_log_2. 
-...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~
-~~~~~
-    + CategoryInfo          
-    : NotSpecified: (Pushi  
-  ng to http...anperos_hr   
- 4.git:String) [], Remot    
-eException
-    + FullyQualifiedErrorId 
-    : NativeCommandError
++ git push origin master 
+> push_log.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo       
+       : NotSpecified:   
+  (error: src refs...s   
+  not match any:Strin    
+g) [], RemoteExcepti    
+on
+    + FullyQualifiedErro 
+   rId : NativeCommandE  
+  rror
  
-To https://github.com/ThanPe
-ros/thanperos_hr4.git
- = [up to date]      main 
--> main
-updating local tracking ref 
-'refs/remotes/origin/main'
-Everything up-to-date
+error: failed to push 
+some refs to 'https://git
+hub.com/ThanPeros/HR4.git
+'

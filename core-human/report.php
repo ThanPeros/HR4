@@ -21,20 +21,165 @@ if (isset($_GET['toggle_theme'])) {
 
 $currentTheme = isset($_SESSION['theme']) ? $_SESSION['theme'] : 'light';
 
-// Reliable Database Connection
-require_once '../config/db.php';
-if (!isset($conn) || !($conn instanceof mysqli)) {
-    global $conn;
-}
-if (!isset($conn) || !($conn instanceof mysqli)) {
-    // Fallback connection if included file didn't expose $conn
-    $conn = new mysqli('localhost', 'root', '', 'dummy_hr4');
-    if ($conn->connect_error) {
-        die("Database connection failed: " . $conn->connect_error);
-    }
-}
 include '../responsive/responsive.php';
 
+// Function to fetch employee data from API
+function fetchEmployeesFromAPI($filters = []) {
+    // Determine base API URL dynamically if on a domain, otherwise default to localhost
+    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
+    $host = $_SERVER['HTTP_HOST'];
+    $api_url = "$protocol://$host/HR1/api/employee_data.php?t=" . time(); 
+    
+    // If it's a domain with a subdirectory structure like yours, it might be safer to use this or keep localhost if internal
+    // But since you encountered 404, we'll try to be more robust.
+    if ($host === 'localhost') {
+        $api_url = "http://localhost/HR1/api/employee_data.php?t=" . time();
+    }
+    
+    // Add filters to API URL if needed
+    if (!empty($filters)) {
+        $query_params = [];
+        if (!empty($filters['department'])) {
+            $query_params[] = "department=" . urlencode($filters['department']);
+        }
+        if (!empty($filters['status'])) {
+            $query_params[] = "status=" . urlencode($filters['status']);
+        }
+        if (!empty($filters['employment_type'])) {
+            $query_params[] = "contract=" . urlencode($filters['employment_type']);
+        }
+        if (!empty($filters['search'])) {
+            $query_params[] = "search=" . urlencode($filters['search']);
+        }
+        
+        if (!empty($query_params)) {
+            $api_url .= "&" . implode('&', $query_params);
+        }
+    }
+    
+    // Initialize cURL session
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $api_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HEADER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Set to true in production with valid SSL
+    
+    // Execute cURL session
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    // Check for cURL errors
+    if (curl_error($ch)) {
+        error_log("cURL Error: " . curl_error($ch));
+        curl_close($ch);
+        return ['error' => 'Failed to connect to API: ' . curl_error($ch)];
+    }
+    
+    curl_close($ch);
+    
+    // Check HTTP status code
+    if ($httpCode !== 200) {
+        return ['error' => "API returned HTTP code: $httpCode"];
+    }
+    
+    // Decode JSON response
+    $data = json_decode($response, true);
+    
+    // Check if JSON decoding was successful
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return ['error' => 'Failed to parse API response: ' . json_last_error_msg()];
+    }
+    
+    return $data;
+}
+
+// Get filter parameters with proper validation
+$department_filter = isset($_GET['department']) ? $_GET['department'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$employment_type_filter = isset($_GET['employment_type']) ? $_GET['employment_type'] : '';
+$search_term = isset($_GET['search']) ? $_GET['search'] : '';
+
+// Build filters array for API
+$api_filters = [];
+if (!empty($department_filter)) $api_filters['department'] = $department_filter;
+if (!empty($status_filter)) $api_filters['status'] = $status_filter;
+if (!empty($employment_type_filter)) $api_filters['employment_type'] = $employment_type_filter;
+if (!empty($search_term)) $api_filters['search'] = $search_term;
+
+// Fetch employees from API
+$api_response = fetchEmployeesFromAPI($api_filters);
+
+// Process API response
+$filtered_employees = [];
+$departments = [];
+$contract_types = [];
+$overall_stats = [
+    'total_employees' => 0,
+    'active_employees' => 0,
+    'overall_avg_salary' => 0,
+    'total_payroll' => 0
+];
+
+if (isset($api_response['error'])) {
+    $api_error = $api_response['error'];
+    error_log("API Error: " . $api_error);
+} else {
+    // Assuming the API returns an array of employees
+    // Adjust this based on your actual API response structure
+    if (isset($api_response['data'])) {
+        $filtered_employees = $api_response['data'];
+    } elseif (is_array($api_response)) {
+        $filtered_employees = $api_response;
+    }
+    
+    // Extract unique departments and contract types for filters
+    $dept_set = [];
+    $contract_set = [];
+    $active_count = 0;
+    $total_salary = 0;
+    
+    foreach ($filtered_employees as &$emp) {
+        // Ensure standard field names
+        if (isset($emp['basic_pay']) && !isset($emp['salary'])) $emp['salary'] = $emp['basic_pay'];
+        if (isset($emp['date_hired']) && !isset($emp['hire_date'])) $emp['hire_date'] = $emp['date_hired'];
+        if (isset($emp['hire_date']) && !isset($emp['date_hired'])) $emp['date_hired'] = $emp['hire_date'];
+
+        // Collect departments
+        if (!empty($emp['department'])) {
+            $dept_set[$emp['department']] = true;
+        }
+        
+        // Collect contract types
+        if (!empty($emp['contract'])) {
+            $contract_set[$emp['contract']] = true;
+        }
+        
+        // Count active employees
+        if (isset($emp['status']) && $emp['status'] === 'Active') {
+            $active_count++;
+        }
+        
+        // Sum salaries
+        if (isset($emp['salary'])) {
+            $total_salary += floatval($emp['salary']);
+        }
+    }
+    
+    $departments = array_keys($dept_set);
+    sort($departments);
+    
+    $contract_types = array_keys($contract_set);
+    sort($contract_types);
+    
+    // Calculate statistics
+    $overall_stats = [
+        'total_employees' => count($filtered_employees),
+        'active_employees' => $active_count,
+        'overall_avg_salary' => count($filtered_employees) > 0 ? $total_salary / count($filtered_employees) : 0,
+        'total_payroll' => $total_salary
+    ];
+}
 
 // Handle Export Requests - must be processed before HTML
 if (isset($_GET['export'])) {
@@ -43,174 +188,17 @@ if (isset($_GET['export'])) {
 
     // Only generate export for non-PDF types
     if ($export_type !== 'pdf') {
-        generateExport($export_type, $filters, $conn);
+        generateExport($export_type, $filters, $filtered_employees);
         exit;
     }
 }
 
-// Get filter parameters with proper validation
-$department_filter = isset($_GET['department']) ? $conn->real_escape_string($_GET['department']) : '';
-$status_filter = isset($_GET['status']) ? $conn->real_escape_string($_GET['status']) : '';
-$employment_type_filter = isset($_GET['employment_type']) ? $conn->real_escape_string($_GET['employment_type']) : '';
-$search_term = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
-
-// Build WHERE clause for filters
-$where_conditions = [];
-$query_params = [];
-$types = '';
-
-if (!empty($department_filter)) {
-    $where_conditions[] = "department = ?";
-    $query_params[] = $department_filter;
-    $types .= 's';
-}
-
-if (!empty($status_filter)) {
-    $where_conditions[] = "status = ?";
-    $query_params[] = $status_filter;
-    $types .= 's';
-}
-
-if (!empty($employment_type_filter)) {
-    $where_conditions[] = "contract = ?";
-    $query_params[] = $employment_type_filter;
-    $types .= 's';
-}
-
-if (!empty($search_term)) {
-    $where_conditions[] = "(name LIKE ? OR job_title LIKE ? OR department LIKE ?)";
-    $query_params[] = "%$search_term%";
-    $query_params[] = "%$search_term%";
-    $query_params[] = "%$search_term%";
-    $types .= 'sss';
-}
-
-$where_clause = '';
-if (!empty($where_conditions)) {
-    $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
-}
-
-// Fetch employees with filters
-$employees_sql = "SELECT * FROM employees $where_clause ORDER BY department, name";
-$stmt = $conn->prepare($employees_sql);
-
-if ($stmt === false) {
-    die("Error preparing statement: " . $conn->error);
-}
-
-if (!empty($query_params)) {
-    $stmt->bind_param($types, ...$query_params);
-}
-
-$stmt->execute();
-$employees_result = $stmt->get_result();
-$filtered_employees = [];
-if ($employees_result) {
-    $filtered_employees = $employees_result->fetch_all(MYSQLI_ASSOC);
-}
-
-// Fetch departments for filter dropdown
-$departments_sql = "SELECT DISTINCT department FROM employees ORDER BY department";
-$departments_result = $conn->query($departments_sql);
-$departments = [];
-if ($departments_result) {
-    while ($row = $departments_result->fetch_assoc()) {
-        $departments[] = $row['department'];
-    }
-}
-
-// Fetch Contract Types for filter dropdown
-$contract_types_sql = "SELECT DISTINCT type_name FROM contract_types ORDER BY type_name";
-$contract_types_result = $conn->query($contract_types_sql);
-$contract_types = [];
-if ($contract_types_result) {
-    while ($row = $contract_types_result->fetch_assoc()) {
-        $contract_types[] = $row['type_name'];
-    }
-}
-
-// Overall statistics
-$overall_stats_sql = "SELECT 
-                        COUNT(*) as total_employees,
-                        COUNT(CASE WHEN status = 'Active' THEN 1 END) as active_employees,
-                        AVG(salary) as overall_avg_salary,
-                        SUM(salary) as total_payroll
-                      FROM employees";
-
-$overall_stats_result = $conn->query($overall_stats_sql);
-$overall_stats = [
-    'total_employees' => 0,
-    'active_employees' => 0,
-    'overall_avg_salary' => 0,
-    'total_payroll' => 0
-];
-if ($overall_stats_result) {
-    $overall_stats = $overall_stats_result->fetch_assoc() ?: $overall_stats;
-}
-
-// Close connection
-$conn->close();
-
 // Export Function (for Excel and CSV only)
-function generateExport($type, $filters, $conn)
+function generateExport($type, $filters, $employees)
 {
     // Clear any output buffers
     while (ob_get_level()) {
         ob_end_clean();
-    }
-
-    // Build query based on filters
-    $where_conditions = [];
-    $query_params = [];
-    $types = '';
-
-    if (!empty($filters['department'])) {
-        $where_conditions[] = "department = ?";
-        $query_params[] = $filters['department'];
-        $types .= 's';
-    }
-
-    if (!empty($filters['status'])) {
-        $where_conditions[] = "status = ?";
-        $query_params[] = $filters['status'];
-        $types .= 's';
-    }
-
-    if (!empty($filters['employment_type'])) {
-        $where_conditions[] = "contract = ?";
-        $query_params[] = $filters['employment_type'];
-        $types .= 's';
-    }
-
-    if (!empty($filters['search'])) {
-        $where_conditions[] = "(name LIKE ? OR job_title LIKE ? OR department LIKE ?)";
-        $query_params[] = "%{$filters['search']}%";
-        $query_params[] = "%{$filters['search']}%";
-        $query_params[] = "%{$filters['search']}%";
-        $types .= 'sss';
-    }
-
-    $where_clause = '';
-    if (!empty($where_conditions)) {
-        $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
-    }
-
-    $sql = "SELECT * FROM employees $where_clause ORDER BY department, name";
-    $stmt = $conn->prepare($sql);
-
-    if ($stmt === false) {
-        die("Error preparing export statement: " . $conn->error);
-    }
-
-    if (!empty($query_params)) {
-        $stmt->bind_param($types, ...$query_params);
-    }
-
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $employees = [];
-    if ($result) {
-        $employees = $result->fetch_all(MYSQLI_ASSOC);
     }
 
     if ($type === 'excel') {
@@ -260,7 +248,6 @@ function exportToExcel($employees, $filters)
         <th>Status</th>
         <th>Salary</th>
         <th>Hire Date</th>
-        <th>Age</th>
         <th>Gender</th>
     </tr>";
 
@@ -273,8 +260,7 @@ function exportToExcel($employees, $filters)
         echo "<td>" . htmlspecialchars($employee['contract'] ?? '') . "</td>";
         echo "<td>" . htmlspecialchars($employee['status'] ?? '') . "</td>";
         echo "<td>₱" . number_format($employee['salary'] ?? 0, 2) . "</td>";
-        echo "<td>" . htmlspecialchars($employee['hire_date'] ?? '') . "</td>";
-        echo "<td>" . htmlspecialchars($employee['age'] ?? '') . "</td>";
+        echo "<td>" . htmlspecialchars($employee['date_hired'] ?? $employee['hire_date'] ?? '') . "</td>";
         echo "<td>" . htmlspecialchars($employee['gender'] ?? '') . "</td>";
         echo "</tr>";
     }
@@ -309,7 +295,6 @@ function exportToCSV($employees, $filters)
         'Status',
         'Salary',
         'Hire Date',
-        'Age',
         'Gender'
     ]);
 
@@ -323,8 +308,7 @@ function exportToCSV($employees, $filters)
             $employee['contract'] ?? '',
             $employee['status'] ?? '',
             '₱' . number_format($employee['salary'] ?? 0, 2),
-            $employee['hire_date'] ?? '',
-            $employee['age'] ?? '',
+            $employee['date_hired'] ?? $employee['hire_date'] ?? '',
             $employee['gender'] ?? ''
         ]);
     }
@@ -396,7 +380,6 @@ function getFilterDescription($filters)
             color: var(--text-dark);
             transition: background 0.3s, color 0.3s;
             line-height: 1.4;
-            line-height: 1.4;
             overflow-x: hidden;
         }
         
@@ -408,6 +391,29 @@ function getFilterDescription($filters)
         body.dark-mode {
             background-color: var(--dark-bg);
             color: var(--text-light);
+        }
+
+        /* API Error Banner */
+        .api-error-banner {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 1rem;
+            margin: 1.5rem;
+            border-radius: var(--border-radius);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        body.dark-mode .api-error-banner {
+            background: #742a2a;
+            border-color: #a06464;
+            color: #feb2b2;
+        }
+
+        .api-error-banner i {
+            font-size: 1.5rem;
         }
 
         /* Enhanced Filter Styles */
@@ -727,7 +733,8 @@ function getFilterDescription($filters)
             .report-card-actions,
             .btn,
             .page-header,
-            .page-subtitle {
+            .page-subtitle,
+            .api-error-banner {
                 display: none !important;
             }
 
@@ -1118,8 +1125,6 @@ function getFilterDescription($filters)
 
 <body class="<?php echo $currentTheme === 'dark' ? 'dark-mode' : ''; ?>">
 
-
-
     <!-- Main Content -->
     <div class="main-content">
         <!-- Print Header (Visible only in print) -->
@@ -1136,8 +1141,18 @@ function getFilterDescription($filters)
                     <i class="fas fa-chart-line"></i>
                     HR Reports
                 </h1>
-                <p class="page-subtitle">Employee data reporting and export</p>
+                <p class="page-subtitle">Employee data reporting and export from API</p>
             </div>
+
+            <?php if (isset($api_error)): ?>
+            <div class="api-error-banner">
+                <i class="fas fa-exclamation-triangle"></i>
+                <div>
+                    <strong>API Connection Error:</strong> <?php echo htmlspecialchars($api_error); ?><br>
+                    <small>Falling back to cached or sample data. Please check if the API endpoint is accessible.</small>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Filters Section -->
             <div class="filters-container">
@@ -1199,6 +1214,41 @@ function getFilterDescription($filters)
                 </form>
             </div>
 
+            <!-- Statistics Cards -->
+            <div class="reports-grid">
+                <div class="report-card">
+                    <div class="report-card-header">
+                        <h3 class="report-card-title">Employee Overview</h3>
+                    </div>
+                    <div class="stat-grid">
+                        <div class="stat-item">
+                            <div class="stat-value"><?php echo $overall_stats['total_employees']; ?></div>
+                            <div class="stat-label">Total Employees</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value"><?php echo $overall_stats['active_employees']; ?></div>
+                            <div class="stat-label">Active</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="report-card">
+                    <div class="report-card-header">
+                        <h3 class="report-card-title">Salary Overview</h3>
+                    </div>
+                    <div class="stat-grid">
+                        <div class="stat-item">
+                            <div class="stat-value">₱<?php echo number_format($overall_stats['overall_avg_salary'], 0); ?></div>
+                            <div class="stat-label">Average Salary</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">₱<?php echo number_format($overall_stats['total_payroll'], 2); ?></div>
+                            <div class="stat-label">Total Payroll</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Employee List -->
             <div class="table-container">
                 <div class="report-card">
@@ -1227,55 +1277,80 @@ function getFilterDescription($filters)
                                 <th>Status</th>
                                 <th>Salary</th>
                                 <th>Hire Date</th>
-                                <th>Age</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if (count($filtered_employees) > 0): ?>
                                 <?php foreach ($filtered_employees as $employee): ?>
                                     <tr>
-                                        <td><?php echo $employee['id']; ?></td>
-                                        <td><strong><?php echo htmlspecialchars($employee['name']); ?></strong></td>
-                                        <td><?php echo htmlspecialchars($employee['department']); ?></td>
-                                        <td><?php echo htmlspecialchars($employee['job_title']); ?></td>
+                                        <td><?php echo htmlspecialchars($employee['id'] ?? ''); ?></td>
+                                        <td><strong><?php echo htmlspecialchars($employee['name'] ?? ''); ?></strong></td>
+                                        <td><?php echo htmlspecialchars($employee['department'] ?? ''); ?></td>
+                                        <td><?php echo htmlspecialchars($employee['job_title'] ?? ''); ?></td>
                                         <td>
                                             <?php
+                                            $contract = $employee['contract'] ?? '';
                                             $badge_class = '';
                                             // Mapping contract types to badge colors
-                                            switch ($employee['contract']) {
-                                                case 'Regular':
-                                                    $badge_class = 'badge-full-time'; // Blueish
+                                            switch (strtolower($contract)) {
+                                                case 'regular':
+                                                case 'full-time':
+                                                    $badge_class = 'badge-full-time';
                                                     break;
-                                                case 'Probationary':
-                                                    $badge_class = 'badge-probation'; // Reddish
+                                                case 'probationary':
+                                                    $badge_class = 'badge-probation';
                                                     break;
-                                                case 'Contract':
-                                                    $badge_class = 'badge-contract'; // Greenish
+                                                case 'contract':
+                                                    $badge_class = 'badge-contract';
                                                     break;
-                                                case 'Project-Based':
-                                                    $badge_class = 'badge-part-time'; // Yellowish
+                                                case 'part-time':
+                                                case 'project-based':
+                                                    $badge_class = 'badge-part-time';
                                                     break;
                                                 default:
-                                                    $badge_class = 'badge-secondary'; // Grey default
+                                                    $badge_class = 'badge-secondary';
                                             }
                                             ?>
                                             <span class="employment-badge <?php echo $badge_class; ?>">
-                                                <?php echo htmlspecialchars($employee['contract'] ?? 'N/A'); ?>
+                                                <?php echo htmlspecialchars($contract ?: 'N/A'); ?>
                                             </span>
                                         </td>
                                         <td>
-                                            <span class="status-badge <?php echo $employee['status'] === 'Active' ? 'status-active' : 'status-inactive'; ?>">
-                                                <?php echo $employee['status']; ?>
+                                            <?php
+                                            $status = $employee['status'] ?? '';
+                                            $status_class = $status === 'Active' ? 'status-active' : 'status-inactive';
+                                            ?>
+                                            <span class="status-badge <?php echo $status_class; ?>">
+                                                <?php echo htmlspecialchars($status ?: 'N/A'); ?>
                                             </span>
                                         </td>
-                                        <td class="currency">₱<?php echo number_format($employee['salary'], 2); ?></td>
-                                        <td><?php echo date('M j, Y', strtotime($employee['hire_date'])); ?></td>
-                                        <td><?php echo $employee['age']; ?></td>
+                                        <td class="currency">
+                                            <?php
+                                            $salary = isset($employee['salary']) ? floatval($employee['salary']) : 0;
+                                            echo '₱' . number_format($salary, 2);
+                                            ?>
+                                        </td>
+                                        <td>
+                                            <?php
+                                            $hire_date = $employee['date_hired'] ?? $employee['hire_date'] ?? '';
+                                            if (!empty($hire_date)) {
+                                                try {
+                                                    echo date('M j, Y', strtotime($hire_date));
+                                                } catch (Exception $e) {
+                                                    echo htmlspecialchars($hire_date);
+                                                }
+                                            } else {
+                                                echo '-';
+                                            }
+                                            ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="9" style="text-align: center;">No employees found matching your filters.</td>
+                                    <td colspan="8" style="text-align: center; padding: 2rem;">
+                                        No employees found matching your filters.
+                                    </td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>

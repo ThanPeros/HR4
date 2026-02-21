@@ -1194,7 +1194,11 @@ $currentUserRole = $_SESSION['role'] ?? 'admin';
 
     async function checkHR1Status(periodId) {
         try {
-            const response = await fetch('http://localhost/HR1/api/budget_status_update.php?action=list');
+            const protocol = window.location.protocol;
+            const host = window.location.host;
+            const apiUrl = `${protocol}//${host}/HR1/api/budget_status_update.php?action=list`;
+            
+            const response = await fetch(apiUrl);
             const data = await response.json();
             
             if (data.status === 'success') {
@@ -1214,7 +1218,10 @@ $currentUserRole = $_SESSION['role'] ?? 'admin';
             }
         } catch (e) {
             console.error(e);
-            alert("Failed to connect to HR1 API (http://localhost/HR1/api/budget_status_update.php). Check if server is running.");
+            const protocol = window.location.protocol;
+            const host = window.location.host;
+            const apiUrl = `${protocol}//${host}/HR1/api/budget_status_update.php`;
+            alert(`Failed to connect to HR1 API (${apiUrl}). Check if server is running.`);
         }
     }
 </script>

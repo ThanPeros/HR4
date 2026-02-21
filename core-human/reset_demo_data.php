@@ -42,7 +42,7 @@ try {
     // Insert 1 Employee
     $sql = "INSERT INTO employees (
         id, employee_id, name, email, phone, address, 
-        birth_date, gender, civil_status, nationality,
+        birth_date, age, gender, civil_status, nationality,
         department, job_title, status, date_hired, date_regularized, contract,
         sss_no, tin_no, philhealth_no, pagibig_no,
         salary, pay_grade, bank_name, bank_account_no,
@@ -50,7 +50,7 @@ try {
         leave_credits_vacation, leave_credits_sick
     ) VALUES (
         1, 'EMP0001', 'Juan Dela Cruz', 'juan.delacruz@slatefreight.com', '0917-123-4567', '123 Rizal St, Makati City',
-        '1990-05-15', 'Male', 'Married', 'Filipino',
+        '1990-05-15', 34, 'Male', 'Married', 'Filipino',
         'Logistics', 'Senior Logistics Officer', 'Active', '2020-01-10', '2020-07-10', 'Regular',
         '12-3456789-0', '123-456-789-000', '12-345678901-2', '1234-5678-9012',
         45000.00, 'L4', 'BDO', '10987654321',
