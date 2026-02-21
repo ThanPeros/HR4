@@ -1,0 +1,37 @@
+# Uploads / user generated files (exclude actual uploaded files, keep folder structure)
+uploads/*
+!uploads/.gitkeep
+!uploads/contracts/
+
+# Logs
+*.log
+logs/*.log
+
+# Environment / sensitive config
+.env
+config/db_credentials.php
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# PHP cache
+*.cache
+
+# Cookie / session files
+cookie.txt
+*.txt
+
+# Composer vendor (keep composer.json/lock, exclude vendor binaries)
+# vendor/    <-- keep vendor since it was already committed
+
+# Git log artifacts
+git_status.log
+git_remote.log
+push_log.txt
+push_log_2.txt
+git_status.txt

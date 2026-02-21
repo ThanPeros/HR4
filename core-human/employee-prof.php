@@ -76,7 +76,10 @@ function initDatabase()
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hmo_number` VARCHAR(50) NULL AFTER `hmo_provider`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_vacation` FLOAT DEFAULT 0 AFTER `hmo_number`",
             "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_sick` FLOAT DEFAULT 0 AFTER `leave_credits_vacation`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `job_description` TEXT NULL AFTER `job_title`"
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `job_description` TEXT NULL AFTER `job_title`",
+
+            // Status column — synced from HR1 API (Active / Inactive / Leave)
+            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `status` VARCHAR(20) NOT NULL DEFAULT 'Active' AFTER `job_description`"
         ];
 
         foreach ($alter_queries as $query) {
@@ -1192,36 +1195,244 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if (json_last_error() === JSON_ERROR_NONE && is_array($employees_to_import)) {
                     $pdo = getDB();
-                    // Prepare statements
-                    $stmtCheck = $pdo->prepare("SELECT id FROM employees WHERE email = ?");
-                    $stmtInsert = $pdo->prepare("INSERT INTO employees (name, email, job_title, department, status, employee_id) VALUES (?, ?, ?, ?, 'Active', ?)");
+                    $pdo->beginTransaction();
                     
-                    foreach ($employees_to_import as $emp) {
-                        $email = $emp['email'] ?? '';
-                        if (empty($email)) continue; // Skip if no email to identify
+                    try {
+                        $stmtCheck = $pdo->prepare("SELECT id FROM employees WHERE email = ?");
                         
-                        // Check duplicate
-                        $stmtCheck->execute([$email]);
-                        if ($stmtCheck->fetch()) {
-                            $skipped_count++;
-                            continue; 
+                        $common_fields = "`name`=?, `job_title`=?, `department`=?, `salary`=?, `date_hired`=?, 
+                                          `phone`=?, `birth_date`=?, `birth_place`=?, `gender`=?, `civil_status`=?, 
+                                          `nationality`=?, `address`=?, `sss_no`=?, `philhealth_no`=?, `pagibig_no`=?, `tin_no`=?,
+                                          `status`=?, `contract`=?, `work_schedule`=?, `bank_name`=?, `bank_account_no`=?, 
+                                          `hmo_provider`=?, `hmo_number`=?, `leave_credits_vacation`=?, `leave_credits_sick`=?, `manager`=?";
+                                          
+                        $stmtUpdate = $pdo->prepare("UPDATE employees SET $common_fields WHERE email = ?");
+                        
+                        $stmtInsert = $pdo->prepare("INSERT INTO employees (`name`, `job_title`, `department`, `salary`, `date_hired`, `phone`, `birth_date`, `birth_place`, `gender`, `civil_status`, `nationality`, `address`, `sss_no`, `philhealth_no`, `pagibig_no`, `tin_no`, `status`, `contract`, `work_schedule`, `bank_name`, `bank_account_no`, `hmo_provider`, `hmo_number`, `leave_credits_vacation`, `leave_credits_sick`, `manager`, `employee_id`, `email`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        
+                        foreach ($employees_to_import as $emp) {
+                            $email = $emp['email'] ?? '';
+                            if (empty($email)) continue;
+                            
+                            $name = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
+                            $job_title = $emp['position'] ?? '';
+                            $dept = $emp['department'] ?? '';
+                            $hr1_id = $emp['id'] ?? rand(1000,9999);
+                            $emp_id = 'IMP-' . str_pad($hr1_id, 4, '0', STR_PAD_LEFT);
+                            $salary = $emp['salary'] ?? $emp['basic_pay'] ?? 0;
+                            $date_hired = $emp['hire_date'] ?? $emp['date_hired'] ?? null;
+                            
+                            $phone = $emp['contact_number'] ?? null;
+                            $birth_date = $emp['date_of_birth'] ?? null;
+                            $birth_place = $emp['place_of_birth'] ?? null;
+                            $gender = $emp['gender'] ?? null;
+                            $civil_status = $emp['civil_status'] ?? null;
+                            $nationality = $emp['nationality'] ?? null;
+                            $address = $emp['home_address'] ?? null;
+                            $sss_no = $emp['sss_number'] ?? null;
+                            $philhealth_no = $emp['philhealth_number'] ?? null;
+                            $pagibig_no = $emp['pagibig_number'] ?? null;
+                            $tin_no = $emp['tin_number'] ?? null;
+                            $status = $emp['status'] ?? $emp['employment_status'] ?? 'Active';
+                            $contract = $emp['employment_contract_type'] ?? null;
+                            $work_schedule = $emp['work_schedule'] ?? null;
+                            $bank_name = $emp['bank_name'] ?? null;
+                            $bank_account_no = $emp['bank_account_number'] ?? null;
+                            $hmo_provider = $emp['hmo_provider'] ?? null;
+                            $hmo_number = $emp['hmo_number'] ?? null;
+                            $leave_credits_vacation = $emp['leave_credits_vacation'] ?? 0;
+                            $leave_credits_sick = $emp['leave_credits_sick'] ?? 0;
+                            $manager = $emp['supervisor'] ?? null;
+                            
+                            $stmtCheck->execute([$email]);
+                            $row = $stmtCheck->fetch();
+                            
+                            $db_employee_id = null;
+                            
+                            if ($row) {
+                                $db_employee_id = $row['id'];
+                                $stmtUpdate->execute([$name, $job_title, $dept, $salary, $date_hired, $phone, $birth_date, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $email]);
+                                $skipped_count++;
+                            } else {
+                                $stmtInsert->execute([$name, $job_title, $dept, $salary, $date_hired, $phone, $birth_date, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $emp_id, $email]);
+                                $db_employee_id = $pdo->lastInsertId();
+                                $imported_count++;
+                            }
+                            
+                            if ($db_employee_id) {
+                                $pdo->prepare("DELETE FROM emergency_contacts WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM educational_background WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM family_dependents WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM seminars WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM work_experience WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM disciplinary_cases WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM performance_reviews WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM salary_history WHERE employee_id = ?")->execute([$db_employee_id]);
+                                $pdo->prepare("DELETE FROM employee_documents WHERE employee_id = ?")->execute([$db_employee_id]);
+
+                                if (!empty($emp['emergency_contact_person']) || !empty($emp['emergency_contact_number'])) {
+                                    $pdo->prepare("INSERT INTO emergency_contacts (employee_id, contact_name, relationship, phone, is_primary) VALUES (?, ?, 'Primary', ?, 1)")
+                                        ->execute([$db_employee_id, $emp['emergency_contact_person'], $emp['emergency_contact_number']]);
+                                }
+
+                                if (!empty($emp['education']) && is_array($emp['education'])) {
+                                    $stmtEdu = $pdo->prepare("INSERT INTO educational_background (employee_id, level, school_name, course, year_graduated) VALUES (?, ?, ?, ?, ?)");
+                                    foreach ($emp['education'] as $edu) {
+                                        $stmtEdu->execute([$db_employee_id, $edu['level'] ?? 'College', $edu['school_name'] ?? '', $edu['degree'] ?? '', $edu['year_graduated'] ?? null]);
+                                    }
+                                }
+                                
+                                if (!empty($emp['dependents']) && is_array($emp['dependents'])) {
+                                    $stmtDep = $pdo->prepare("INSERT INTO family_dependents (employee_id, name, relationship, birth_date) VALUES (?, ?, ?, ?)");
+                                    foreach ($emp['dependents'] as $dep) {
+                                        $stmtDep->execute([$db_employee_id, $dep['name'] ?? '', $dep['relationship'] ?? '', $dep['date_of_birth'] ?? null]);
+                                    }
+                                }
+                                
+                                if (!empty($emp['training']) && is_array($emp['training'])) {
+                                    $stmtTrn = $pdo->prepare("INSERT INTO seminars (employee_id, seminar_name, organizer, date_from, date_to) VALUES (?, ?, ?, ?, ?)");
+                                    foreach ($emp['training'] as $trn) {
+                                        $date_c = $trn['date_completed'] ?? date('Y-m-d');
+                                        $stmtTrn->execute([$db_employee_id, $trn['training_name'] ?? '', $trn['provider'] ?? '', $date_c, $date_c]);
+                                    }
+                                }
+
+                                if (!empty($emp['history']) && is_array($emp['history'])) {
+                                    $stmtExp = $pdo->prepare("INSERT INTO work_experience (employee_id, company_name, position, date_from, date_to, is_current) VALUES (?, ?, ?, ?, ?, 0)");
+                                    foreach ($emp['history'] as $hist) {
+                                        $stmtExp->execute([$db_employee_id, $hist['company_name'] ?? '', $hist['position'] ?? '', $hist['start_date'] ?? date('Y-m-d'), $hist['end_date'] ?? null]);
+                                    }
+                                }
+
+                                if (!empty($emp['performance']) && is_array($emp['performance'])) {
+                                    $stmtPerf = $pdo->prepare("INSERT INTO performance_reviews (employee_id, review_date, rating, evaluator, comments) VALUES (?, ?, ?, 'System', ?)");
+                                    foreach ($emp['performance'] as $perf) {
+                                        $stmtPerf->execute([$db_employee_id, $perf['review_date'] ?? date('Y-m-d'), $perf['rating'] ?? '', $perf['comments'] ?? '']);
+                                    }
+                                }
+
+                                if (!empty($emp['disciplinary']) && is_array($emp['disciplinary'])) {
+                                    $stmtDisc = $pdo->prepare("INSERT INTO disciplinary_cases (employee_id, violation, action_taken, status, date_reported) VALUES (?, ?, ?, ?, ?)");
+                                    foreach ($emp['disciplinary'] as $disc) {
+                                        $stmtDisc->execute([$db_employee_id, $disc['violation'] ?? '', $disc['action_taken'] ?? '', $disc['status'] ?? 'Open', $disc['incident_date'] ?? date('Y-m-d')]);
+                                    }
+                                }
+                                
+                                if (!empty($emp['compensation']) && is_array($emp['compensation'])) {
+                                    $stmtSal = $pdo->prepare("INSERT INTO salary_history (employee_id, amount, effective_date, type) VALUES (?, ?, ?, ?)");
+                                    foreach ($emp['compensation'] as $sal) {
+                                        $stmtSal->execute([$db_employee_id, $sal['amount'] ?? 0, $sal['effective_date'] ?? date('Y-m-d'), $sal['type'] ?? 'Adjustment']);
+                                    }
+                                }
+
+                                if (!empty($emp['files']) && is_array($emp['files'])) {
+                                    $stmtDoc = $pdo->prepare("INSERT INTO employee_documents (employee_id, document_name, document_type, file_path) VALUES (?, ?, 'Other', ?)");
+                                    foreach ($emp['files'] as $file) {
+                                        $p = $file['file_path'] ?? $file['url'] ?? '';
+                                        $n = $file['file_name'] ?? $file['name'] ?? 'Document';
+                                        if(!empty($p)){
+                                            $stmtDoc->execute([$db_employee_id, $n, $p]);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        
-                        $name = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
-                        $job_title = $emp['position'] ?? '';
-                        $dept = $emp['department'] ?? '';
-                        $hr1_id = $emp['id'] ?? rand(1000,9999);
-                        $emp_id = 'IMP-' . str_pad($hr1_id, 4, '0', STR_PAD_LEFT); // Prefix IMP for imported
-                        
-                        // Note: Ignoring avatar/photo for now as it requires file downloading/handling logic not present
-                        
-                        if ($stmtInsert->execute([$name, $email, $job_title, $dept, $emp_id])) {
-                            $imported_count++;
-                        }
+                        $pdo->commit();
+                        $response = ['success' => true, 'message' => "Import complete. Imported: $imported_count, Updated: $skipped_count"];
+                    } catch (Exception $ex) {
+                        $pdo->rollBack();
+                        throw $ex;
                     }
-                    $response = ['success' => true, 'message' => "Import complete. Imported: $imported_count, Skipped (Duplicate): $skipped_count"];
                 } else {
                     $response['message'] = 'Invalid employee data format';
+                }
+                break;
+
+            case 'preview_duplicates':
+                try {
+                    $pdo = getDB();
+                    // Find duplicates by exact email match (keeping the one with the lowest id)
+                    $stmt = $pdo->query("
+                        SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
+                               e.date_hired, e.status
+                        FROM employees e
+                        INNER JOIN (
+                            SELECT LOWER(TRIM(email)) AS norm_email
+                            FROM employees
+                            WHERE email IS NOT NULL AND TRIM(email) != ''
+                            GROUP BY LOWER(TRIM(email))
+                            HAVING COUNT(*) > 1
+                        ) dup ON LOWER(TRIM(e.email)) = dup.norm_email
+                        ORDER BY LOWER(TRIM(e.email)), e.id ASC
+                    ");
+                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                    // Also find duplicates by exact name match (where email is null/empty)
+                    $stmt2 = $pdo->query("
+                        SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
+                               e.date_hired, e.status
+                        FROM employees e
+                        INNER JOIN (
+                            SELECT LOWER(TRIM(name)) AS norm_name
+                            FROM employees
+                            WHERE (email IS NULL OR TRIM(email) = '')
+                            GROUP BY LOWER(TRIM(name))
+                            HAVING COUNT(*) > 1
+                        ) dup ON LOWER(TRIM(e.name)) = dup.norm_name
+                        WHERE (e.email IS NULL OR TRIM(e.email) = '')
+                        ORDER BY LOWER(TRIM(e.name)), e.id ASC
+                    ");
+                    $rows2 = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+
+                    $all_rows = array_merge($rows, $rows2);
+
+                    // Group duplicates
+                    $groups = [];
+                    foreach ($all_rows as $r) {
+                        $key = !empty($r['email']) ? 'email_' . strtolower(trim($r['email'])) : 'name_' . strtolower(trim($r['name']));
+                        $groups[$key][] = $r;
+                    }
+
+                    $response = ['success' => true, 'groups' => array_values($groups), 'total' => count($all_rows)];
+                } catch (Exception $e) {
+                    $response['message'] = 'Error scanning duplicates: ' . $e->getMessage();
+                }
+                break;
+
+            case 'delete_duplicates':
+                $ids_to_delete = json_decode($_POST['ids'] ?? '[]', true);
+                if (!is_array($ids_to_delete) || empty($ids_to_delete)) {
+                    $response['message'] = 'No employee IDs provided for deletion.';
+                    break;
+                }
+                // Sanitize to integers
+                $ids_to_delete = array_map('intval', $ids_to_delete);
+                $ids_to_delete = array_filter($ids_to_delete, fn($id) => $id > 0);
+
+                try {
+                    $pdo = getDB();
+                    $pdo->beginTransaction();
+                    $deleted = 0;
+                    $tables = [
+                        'emergency_contacts', 'educational_background', 'family_dependents',
+                        'seminars', 'work_experience', 'disciplinary_cases',
+                        'performance_reviews', 'salary_history', 'employee_documents', 'skills'
+                    ];
+                    foreach ($ids_to_delete as $del_id) {
+                        foreach ($tables as $tbl) {
+                            try {
+                                $pdo->prepare("DELETE FROM `$tbl` WHERE employee_id = ?")->execute([$del_id]);
+                            } catch (Exception $te) { /* table may not exist, skip */ }
+                        }
+                        $stmt = $pdo->prepare('DELETE FROM employees WHERE id = ?');
+                        $stmt->execute([$del_id]);
+                        $deleted += $stmt->rowCount();
+                    }
+                    $pdo->commit();
+                    $response = ['success' => true, 'message' => "Successfully deleted $deleted duplicate employee record(s).", 'deleted' => $deleted];
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    $response['message'] = 'Error deleting duplicates: ' . $e->getMessage();
                 }
                 break;
 
@@ -1962,8 +2173,11 @@ if (isset($_GET['edit'])) {
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span>Employee Directory</span>
-                        <div>
+                        <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-primary"><?php echo count($employees); ?> Employees</span>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="deleteDuplicatesBtn" onclick="openDeleteDuplicatesModal()" title="Find and delete duplicate employee records">
+                                <i class="fas fa-clone me-1"></i> Delete Duplicates
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -2043,8 +2257,12 @@ if (isset($_GET['edit'])) {
                                                 <td><?php echo htmlspecialchars($employee['department']); ?></td>
                                                 <td><?php echo htmlspecialchars($employee['job_title']); ?></td>
                                                 <td>
-                                                    <span class="badge status-badge <?php echo $employee['status'] === 'Active' ? 'bg-success' : 'bg-secondary'; ?>">
-                                                        <?php echo $employee['status']; ?>
+                                                    <?php
+                                                        $s = $employee['status'] ?? 'Active';
+                                                        $sBadge = $s === 'Active' ? 'bg-success' : ($s === 'Leave' ? 'bg-warning text-dark' : 'bg-secondary');
+                                                    ?>
+                                                    <span class="badge status-badge <?php echo $sBadge; ?>">
+                                                        <?php echo htmlspecialchars($s); ?>
                                                     </span>
                                                 </td>
                                                 <td>
@@ -2063,6 +2281,65 @@ if (isset($_GET['edit'])) {
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delete Duplicates Modal -->
+            <div class="modal fade" id="deleteDuplicatesModal" tabindex="-1" aria-labelledby="deleteDuplicatesModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header" style="background: linear-gradient(135deg, #c0392b, #e74c3c); color: white;">
+                            <h5 class="modal-title" id="deleteDuplicatesModalLabel">
+                                <i class="fas fa-clone me-2"></i>Duplicate Employee Manager
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Scanning state -->
+                            <div id="dupScanningState" class="text-center py-5">
+                                <div class="spinner-border text-danger mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                                <h5 class="text-muted">Scanning for duplicate records...</h5>
+                                <p class="text-muted small">Comparing employee names and email addresses</p>
+                            </div>
+
+                            <!-- No duplicates found -->
+                            <div id="dupNoneState" style="display:none;" class="text-center py-5">
+                                <i class="fas fa-check-circle text-success fa-4x mb-3"></i>
+                                <h5>No Duplicates Found!</h5>
+                                <p class="text-muted">All employee records appear to be unique.</p>
+                            </div>
+
+                            <!-- Duplicates found -->
+                            <div id="dupResultsState" style="display:none;">
+                                <div class="alert alert-warning d-flex align-items-center mb-3">
+                                    <i class="fas fa-exclamation-triangle me-3 fa-lg"></i>
+                                    <div>
+                                        Found <strong id="dupGroupCount">0</strong> group(s) of duplicate employees
+                                        (<strong id="dupTotalCount">0</strong> total records).
+                                        <br><small>The <span class="badge bg-success">KEEP</span> record (oldest entry) is pre-selected to be retained. Check the boxes of records you want to delete.</small>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3 d-flex gap-2 flex-wrap">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="selectAllDuplicates()">
+                                        <i class="fas fa-check-square me-1"></i>Select All Suggested
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="deselectAllDuplicates()">
+                                        <i class="fas fa-square me-1"></i>Deselect All
+                                    </button>
+                                    <span class="ms-auto text-muted small align-self-center"><span id="selectedDupCount">0</span> record(s) selected for deletion</span>
+                                </div>
+
+                                <div id="dupGroupsList"></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-danger" id="confirmDeleteDupBtn" style="display:none;" onclick="confirmDeleteDuplicates()">
+                                <i class="fas fa-trash-alt me-1"></i> Delete Selected Records
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2490,6 +2767,7 @@ if (isset($_GET['edit'])) {
                                     <th>Position</th>
                                     <th>Department</th>
                                     <th>Email</th>
+                                    <th>Status</th>
                                     <th>Avatar</th>
                                 </tr>
                             </thead>
@@ -2619,7 +2897,7 @@ if (isset($_GET['edit'])) {
                 // Disable import button while fetching
                 if (importBtn) importBtn.disabled = true;
 
-                fetch('http://localhost/HR1/api/employee_data.php')
+                fetch('http://localhost/HR1/api/employee_data.php?t=' + new Date().getTime())
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('Network response was not ok');
@@ -2653,6 +2931,7 @@ if (isset($_GET['edit'])) {
                                     <td>${emp.position || '-'}</td>
                                     <td>${emp.department || '-'}</td>
                                     <td>${emp.email || '-'}</td>
+                                    <td><span class="badge ${ emp.status === 'Active' ? 'bg-success' : emp.status === 'Leave' ? 'bg-warning text-dark' : 'bg-secondary' }">${emp.status || '-'}</span></td>
                                     <td>${avatarHtml}</td>
                                 `;
                                 tbody.appendChild(row);
@@ -2684,7 +2963,7 @@ if (isset($_GET['edit'])) {
                     return;
                 }
 
-                if (!confirm(`Are you sure you want to import ${fetchedHR1Data.length} employees? Duplicates (by email) will be skipped.`)) {
+                if (!confirm(`Are you sure you want to import ${fetchedHR1Data.length} employees? Duplicates (by email) will be updated.`)) {
                     return;
                 }
 
@@ -3222,6 +3501,176 @@ if (isset($_GET['edit'])) {
             } else {
                 alert('Audit Modal not defined in page.');
             }
+        }
+
+        // =============================================
+        // DELETE DUPLICATES FEATURE
+        // =============================================
+        let dupModal = null;
+
+        function openDeleteDuplicatesModal() {
+            const modalEl = document.getElementById('deleteDuplicatesModal');
+            if (!modalEl) return;
+            dupModal = new bootstrap.Modal(modalEl);
+            dupModal.show();
+
+            // Reset all states
+            document.getElementById('dupScanningState').style.display = 'block';
+            document.getElementById('dupNoneState').style.display = 'none';
+            document.getElementById('dupResultsState').style.display = 'none';
+            document.getElementById('confirmDeleteDupBtn').style.display = 'none';
+            document.getElementById('dupGroupsList').innerHTML = '';
+            document.getElementById('selectedDupCount').textContent = '0';
+
+            // Call backend to preview duplicates
+            const fd = new FormData();
+            fd.append('action', 'preview_duplicates');
+            fetch('', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('dupScanningState').style.display = 'none';
+                    if (!data.success) {
+                        alert('Error: ' + (data.message || 'Could not scan duplicates.'));
+                        return;
+                    }
+                    const groups = data.groups || [];
+                    if (groups.length === 0) {
+                        document.getElementById('dupNoneState').style.display = 'block';
+                        return;
+                    }
+                    document.getElementById('dupResultsState').style.display = 'block';
+                    document.getElementById('confirmDeleteDupBtn').style.display = 'inline-block';
+                    document.getElementById('dupGroupCount').textContent = groups.length;
+                    document.getElementById('dupTotalCount').textContent = data.total;
+                    renderDupGroups(groups);
+                })
+                .catch(err => {
+                    document.getElementById('dupScanningState').style.display = 'none';
+                    alert('Network error: ' + err.message);
+                });
+        }
+
+        function renderDupGroups(groups) {
+            const container = document.getElementById('dupGroupsList');
+            container.innerHTML = '';
+            groups.forEach((group, gi) => {
+                const key = group[0].email ? `Email: ${group[0].email}` : `Name: ${group[0].name}`;
+                let rowsHtml = '';
+                group.forEach((emp, i) => {
+                    const isKeep = (i === 0); // Keep the first/oldest record
+                    const badge = isKeep
+                        ? '<span class="badge bg-success me-2">KEEP</span>'
+                        : '<span class="badge bg-danger me-2">DUPLICATE</span>';
+                    const checked = !isKeep ? 'checked' : '';
+                    const disabled = isKeep ? 'disabled' : '';
+                    rowsHtml += `
+                        <tr class="${isKeep ? 'table-success' : 'table-danger'}">
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input dup-checkbox" 
+                                    value="${emp.id}" ${checked} ${disabled}
+                                    onchange="updateDupCount()">
+                            </td>
+                            <td>${badge}<strong>${escHtml(emp.name)}</strong><br>
+                                <small class="text-muted">ID: ${escHtml(emp.employee_id || 'N/A')}</small></td>
+                            <td><small>${escHtml(emp.department || '-')}</small></td>
+                            <td><small>${escHtml(emp.job_title || '-')}</small></td>
+                            <td><small>${escHtml(emp.date_hired || '-')}</small></td>
+                            <td><small class="badge ${emp.status === 'Active' ? 'bg-success' : 'bg-secondary'}">${escHtml(emp.status || 'N/A')}</small></td>
+                            <td><small class="text-muted">DB ID: ${emp.id}</small></td>
+                        </tr>`;
+                });
+
+                container.innerHTML += `
+                    <div class="card mb-3 border-danger shadow-sm">
+                        <div class="card-header bg-light d-flex align-items-center">
+                            <i class="fas fa-users text-danger me-2"></i>
+                            <strong>Duplicate Group ${gi + 1}</strong>
+                            <span class="ms-2 text-muted small">— ${escHtml(key)} (${group.length} records)</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:40px;">Delete?</th>
+                                        <th>Employee</th>
+                                        <th>Department</th>
+                                        <th>Position</th>
+                                        <th>Date Hired</th>
+                                        <th>Status</th>
+                                        <th>DB ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rowsHtml}</tbody>
+                            </table>
+                        </div>
+                    </div>`;
+            });
+            updateDupCount();
+        }
+
+        function updateDupCount() {
+            const checked = document.querySelectorAll('.dup-checkbox:checked:not([disabled])');
+            document.getElementById('selectedDupCount').textContent = checked.length;
+            document.getElementById('confirmDeleteDupBtn').disabled = checked.length === 0;
+        }
+
+        function selectAllDuplicates() {
+            document.querySelectorAll('.dup-checkbox:not([disabled])').forEach(cb => { cb.checked = true; });
+            updateDupCount();
+        }
+
+        function deselectAllDuplicates() {
+            document.querySelectorAll('.dup-checkbox:not([disabled])').forEach(cb => { cb.checked = false; });
+            updateDupCount();
+        }
+
+        function confirmDeleteDuplicates() {
+            const checked = document.querySelectorAll('.dup-checkbox:checked:not([disabled])');
+            const ids = Array.from(checked).map(cb => parseInt(cb.value));
+            if (ids.length === 0) {
+                alert('No records selected for deletion.');
+                return;
+            }
+
+            if (!confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} employee record(s) and ALL their associated data (documents, contacts, education, etc.).\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?`)) {
+                return;
+            }
+
+            const btn = document.getElementById('confirmDeleteDupBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Deleting...';
+
+            const fd = new FormData();
+            fd.append('action', 'delete_duplicates');
+            fd.append('ids', JSON.stringify(ids));
+
+            fetch('', { method: 'POST', body: fd })
+                .then(r => r.json())
+                .then(data => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> Delete Selected Records';
+                    if (data.success) {
+                        if (dupModal) dupModal.hide();
+                        // Show success alert
+                        const alertDiv = document.createElement('div');
+                        alertDiv.className = 'alert alert-success alert-dismissible fade show shadow';
+                        alertDiv.innerHTML = `<i class="fas fa-check-circle me-2"></i><strong>Success!</strong> ${escHtml(data.message)} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+                        document.querySelector('.alert-container').appendChild(alertDiv);
+                        setTimeout(() => window.location.reload(), 2000);
+                    } else {
+                        alert('Error: ' + (data.message || 'Deletion failed.'));
+                    }
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-trash-alt me-1"></i> Delete Selected Records';
+                    alert('Network error: ' + err.message);
+                });
+        }
+
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
     </script>
 </body>
