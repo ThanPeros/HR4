@@ -736,12 +736,12 @@ function getModulePath($basePath, $moduleFile)
                     </a>
 
                     <?php
-                    $employmentInfoPath = getModulePath('../core-human/', 'employment_info.php');
-                    $employmentInfoClass = ($employmentInfoPath === '#') ? 'missing-file' : '';
+                    $employmentLifePath = getModulePath('../core-human/', 'employment-life.php');
+                    $employmentLifeClass = ($employmentLifePath === '#') ? 'missing-file' : '';
                     ?>
-                    <a href="<?php echo $employmentInfoPath; ?>" class="<?php echo $employmentInfoClass; ?>"
-                        <?php if ($employmentInfoPath === '#') echo 'onclick="showFileMissing()"'; ?>>
-                        <i class="fas fa-briefcase"></i> Employment Management
+                    <a href="<?php echo $employmentLifePath; ?>" class="<?php echo $employmentLifeClass; ?>"
+                        <?php if ($employmentLifePath === '#') echo 'onclick="showFileMissing()"'; ?>>
+                        <i class="fas fa-briefcase"></i> Employment Life Cycle
                     </a>
                     
                     <?php

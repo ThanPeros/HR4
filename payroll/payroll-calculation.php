@@ -153,14 +153,14 @@ function checkAndCreateTables($pdo) {
         $pdo->exec("ALTER TABLE payroll_budgets ADD COLUMN IF NOT EXISTS approver_notes TEXT AFTER approved_by");
     } catch (Exception $e) {}
 
-    // Seed Initial Data if empty
-    $checkTA = $pdo->query("SELECT COUNT(*) FROM ta_batches")->fetchColumn();
-    if ($checkTA == 0) {
-        $pdo->exec("INSERT INTO ta_batches (id, name, start_date, end_date, total_logs, status) VALUES 
-            ('TA-2026-01-A', 'Period: Jan 1 - Jan 15, 2026', '2026-01-01', '2026-01-15', 1450, 'Verified'),
-            ('TA-2026-01-B', 'Period: Jan 16 - Jan 31, 2026', '2026-01-16', '2026-01-31', 1520, 'Pending Review')
-        ");
-    }
+    // Seed Initial Data
+    $pdo->exec("INSERT IGNORE INTO ta_batches (id, name, start_date, end_date, total_logs, status) VALUES 
+        ('TA-2026-01-A', 'Period: Jan 1 - Jan 15, 2026', '2026-01-01', '2026-01-15', 1450, 'Verified'),
+        ('TA-2026-01-B', 'Period: Jan 16 - Jan 31, 2026', '2026-01-16', '2026-01-31', 1520, 'Pending Review'),
+        ('TA-2026-02-A', 'Period: Feb 1 - Feb 15, 2026', '2026-02-01', '2026-02-15', 1510, 'Verified'),
+        ('TA-2026-02-B', 'Period: Feb 16 - Feb 28, 2026', '2026-02-16', '2026-02-28', 1480, 'Verified'),
+        ('TA-2026-03-A', 'Period: Mar 1 - Mar 15, 2026', '2026-03-01', '2026-03-15', 1550, 'Verified')
+    ");
 }
 checkAndCreateTables($pdo);
 
@@ -203,27 +203,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['api_get_budget']) && is
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // --- STEP A: IMPORT ATTENDANCE LOGS (Simulated API) ---
+    // --- STEP A: IMPORT ATTENDANCE LOGS (Real HR3 API) ---
     if (isset($_POST['import_hr3'])) {
-        // Automatically determine the next available period (Simulated)
-        // In a real scenario, this would call the API to see what's ready
-        
-        $start = '2026-02-01';
-        $end = '2026-02-15';
-        $batchId = 'TA-2026-02-A';
-        $name = "Period: Feb 1 - Feb 15, 2026";
-        
-        // Check if already exists
+        // Dynamically determine the next period based on last imported batch
+        $lastBatch = $pdo->query("SELECT end_date FROM ta_batches ORDER BY end_date DESC LIMIT 1")->fetch();
+
+        if ($lastBatch) {
+            $nextStart = date('Y-m-d', strtotime($lastBatch['end_date'] . ' +1 day'));
+        } else {
+            $nextStart = date('Y-m-01'); // Default: first day of current month
+        }
+
+        $day   = (int)date('j', strtotime($nextStart));
+        $ym    = date('Y-m', strtotime($nextStart));
+
+        if ($day <= 15) {
+            $start  = $ym . '-01';
+            $end    = $ym . '-15';
+            $half   = 'A';
+        } else {
+            $start  = $ym . '-16';
+            $end    = date('Y-m-t', strtotime($nextStart)); // Last day of month
+            $half   = 'B';
+        }
+
+        $batchId = 'TA-' . date('Y-m', strtotime($start)) . '-' . $half;
+
+        // Check if this batch already exists
         $check = $pdo->prepare("SELECT id FROM ta_batches WHERE id = ?");
         $check->execute([$batchId]);
-        
         if ($check->rowCount() > 0) {
-            $_SESSION['error_message'] = "No new time & attendance records found (Feb 1-15 is already imported).";
-        } else {
-            $pdo->prepare("INSERT INTO ta_batches (id, name, start_date, end_date, total_logs, status) VALUES (?, ?, ?, ?, ?, 'Verified')")
-                ->execute([$batchId, $name, $start, $end, rand(1000, 2000)]);
-            $_SESSION['success_message'] = "STEP A: Successfully imported available attendance logs (Feb 1 - Feb 15, 2026).";
+            $periodLabel = date('M j', strtotime($start)) . ' - ' . date('M j, Y', strtotime($end));
+            $_SESSION['error_message'] = "Period $periodLabel is already imported. No new records to fetch.";
+            header("Location: payroll-calculation.php"); exit;
         }
+
+        // Call hr3-import.php via internal HTTP request
+        $scheme    = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host      = $_SERVER['HTTP_HOST'];
+        $basePath  = rtrim(dirname(dirname($_SERVER['PHP_SELF'])), '/');
+        $importUrl = $scheme . '://' . $host . $basePath . '/api/hr3-import.php';
+
+        $ch = curl_init($importUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+            'start_date' => $start,
+            'end_date'   => $end,
+            'batch_id'   => $batchId,
+        ]));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $result      = json_decode($response, true);
+        $periodLabel = date('M j', strtotime($start)) . ' - ' . date('M j, Y', strtotime($end));
+
+        if ($result && $result['success']) {
+            $mapped  = $result['mapped']        ?? 0;
+            $records = $result['total_records'] ?? 0;
+            $_SESSION['success_message'] = "STEP A: Successfully imported $records attendance records for $mapped employees ($periodLabel).";
+        } else {
+            $msg = $result['message'] ?? "HTTP $httpCode – could not reach import API";
+            $_SESSION['error_message'] = "Import failed: $msg";
+        }
+
         header("Location: payroll-calculation.php"); exit;
     }
 

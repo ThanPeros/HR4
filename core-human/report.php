@@ -23,75 +23,74 @@ $currentTheme = isset($_SESSION['theme']) ? $_SESSION['theme'] : 'light';
 
 include '../responsive/responsive.php';
 
-// Function to fetch employee data from API
-function fetchEmployeesFromAPI($filters = []) {
-    // Determine base API URL dynamically if on a domain, otherwise default to localhost
-    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
-    $host = $_SERVER['HTTP_HOST'];
-    $api_url = "$protocol://$host/HR1/api/employee_data.php?t=" . time(); 
-    
-    // If it's a domain with a subdirectory structure like yours, it might be safer to use this or keep localhost if internal
-    // But since you encountered 404, we'll try to be more robust.
-    if ($host === 'localhost') {
-        $api_url = "http://localhost/HR1/api/employee_data.php?t=" . time();
+// Required to access local DB
+require_once '../config/db.php';
+
+// Fetches employees directly from local DB
+function fetchEmployeesFromDB($filters = []) {
+    global $pdo;
+
+    if (!isset($pdo) || !$pdo) {
+        return ['error' => 'Database connection failed: DB connection not initialized. Check config/db.php'];
     }
-    
-    // Add filters to API URL if needed
-    if (!empty($filters)) {
-        $query_params = [];
-        if (!empty($filters['department'])) {
-            $query_params[] = "department=" . urlencode($filters['department']);
-        }
+
+    try {
+        $sql = "SELECT * FROM employees WHERE 1=1";
+        $params = [];
+
         if (!empty($filters['status'])) {
-            $query_params[] = "status=" . urlencode($filters['status']);
+            $sql .= " AND status = ?";
+            $params[] = $filters['status'];
+        }
+        if (!empty($filters['department'])) {
+            $sql .= " AND department = ?";
+            $params[] = $filters['department'];
         }
         if (!empty($filters['employment_type'])) {
-            $query_params[] = "contract=" . urlencode($filters['employment_type']);
+            $sql .= " AND contract = ?";
+            $params[] = $filters['employment_type'];
         }
         if (!empty($filters['search'])) {
-            $query_params[] = "search=" . urlencode($filters['search']);
+            $sql .= " AND (name LIKE ? OR job_title LIKE ? OR department LIKE ?)";
+            $search = '%' . $filters['search'] . '%';
+            $params[] = $search;
+            $params[] = $search;
+            $params[] = $search;
         }
+
+        $sql .= " ORDER BY id DESC";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $filtered_employees = [];
         
-        if (!empty($query_params)) {
-            $api_url .= "&" . implode('&', $query_params);
+        foreach ($data as $emp) {
+            // Apply formatting defaults
+            if (empty($emp['status'])) $emp['status'] = 'Active';
+            if (!isset($emp['job_title'])) $emp['job_title'] = '';
+            if (!isset($emp['contract'])) $emp['contract'] = '';
+            
+            $emp['salary'] = !empty($emp['salary']) ? $emp['salary'] : (!empty($emp['basic_pay']) ? $emp['basic_pay'] : 0);
+            
+            if (!empty($emp['hire_date']) && $emp['hire_date'] !== '0000-00-00') {
+                $emp['date_hired'] = $emp['hire_date'];
+            } elseif (!empty($emp['date_hired']) && $emp['date_hired'] !== '0000-00-00') {
+                $emp['hire_date'] = $emp['date_hired'];
+            } else {
+                $emp['hire_date']  = '';
+                $emp['date_hired'] = '';
+            }
+
+            $filtered_employees[] = $emp;
         }
+
+        return $filtered_employees;
+
+    } catch (Throwable $e) {
+        return ['error' => 'Database connection failed: ' . $e->getMessage()];
     }
-    
-    // Initialize cURL session
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $api_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HEADER, false);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Set to true in production with valid SSL
-    
-    // Execute cURL session
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    // Check for cURL errors
-    if (curl_error($ch)) {
-        error_log("cURL Error: " . curl_error($ch));
-        curl_close($ch);
-        return ['error' => 'Failed to connect to API: ' . curl_error($ch)];
-    }
-    
-    curl_close($ch);
-    
-    // Check HTTP status code
-    if ($httpCode !== 200) {
-        return ['error' => "API returned HTTP code: $httpCode"];
-    }
-    
-    // Decode JSON response
-    $data = json_decode($response, true);
-    
-    // Check if JSON decoding was successful
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        return ['error' => 'Failed to parse API response: ' . json_last_error_msg()];
-    }
-    
-    return $data;
 }
 
 // Get filter parameters with proper validation
@@ -107,8 +106,8 @@ if (!empty($status_filter)) $api_filters['status'] = $status_filter;
 if (!empty($employment_type_filter)) $api_filters['employment_type'] = $employment_type_filter;
 if (!empty($search_term)) $api_filters['search'] = $search_term;
 
-// Fetch employees from API
-$api_response = fetchEmployeesFromAPI($api_filters);
+// Fetch employees from dummy_hr4 database (employee-prof.php)
+$api_response = fetchEmployeesFromDB($api_filters);
 
 // Process API response
 $filtered_employees = [];
@@ -125,13 +124,8 @@ if (isset($api_response['error'])) {
     $api_error = $api_response['error'];
     error_log("API Error: " . $api_error);
 } else {
-    // Assuming the API returns an array of employees
-    // Adjust this based on your actual API response structure
-    if (isset($api_response['data'])) {
-        $filtered_employees = $api_response['data'];
-    } elseif (is_array($api_response)) {
-        $filtered_employees = $api_response;
-    }
+    // Assuming DB object returns directly
+    $filtered_employees = $api_response;
     
     // Extract unique departments and contract types for filters
     $dept_set = [];

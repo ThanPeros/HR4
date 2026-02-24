@@ -1,1525 +1,1530 @@
 <?php
-ob_start(); // Start output buffering immediately
-// Add proper error handling at the very beginning
+// Enable maximum error reporting at the VERY top
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
+ini_set('error_log', 'php_errors.log');
 
-// Start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+// Start output buffering
+ob_start();
 
-// Include external database configuration
-require_once "../config/db.php";
-
-// Authentication Check
-if (!isset($_SESSION['user']) || !isset($_SESSION['role'])) {
-    header('Location: ../index.php');
-    exit;
-}
-
-// File upload configuration
-define('UPLOAD_DIR', 'uploads/');
-define('MAX_FILE_SIZE', 2 * 1024 * 1024); // 2MB
-$allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
-$allowed_doc_types = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-
-// Database connection function (PDO version)
-function getDB()
-{
-    global $pdo;
-    if (!$pdo) {
-        die("Database connection failed");
+try {
+    // Start session if not already started
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
     }
-    return $pdo;
-}
 
-// Initialize database tables
-function initDatabase()
-{
-    $pdo = getDB();
+    // Include external database configuration
+    require_once "../config/db.php";
 
-    try {
-        // Add columns to employees table if they don't exist
-        $alter_queries = [
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `email` VARCHAR(100) NULL AFTER `name`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `phone` VARCHAR(20) NULL AFTER `email`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `address` TEXT NULL AFTER `phone`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `photo` VARCHAR(255) NULL AFTER `address`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `gender` VARCHAR(20) NULL AFTER `photo`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `age` INT(3) NULL AFTER `gender` COLLATE utf8mb4_general_ci",
-            "ALTER TABLE `employees` MODIFY COLUMN `age` INT(3) NULL DEFAULT NULL",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `employee_id` VARCHAR(20) NULL AFTER `id`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_date` DATE NULL AFTER `age`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `birth_place` VARCHAR(100) NULL AFTER `birth_date`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `civil_status` VARCHAR(20) NULL AFTER `birth_place`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `nationality` VARCHAR(50) NULL AFTER `civil_status`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `religion` VARCHAR(50) NULL AFTER `nationality`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `sss_no` VARCHAR(20) NULL AFTER `religion`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `tin_no` VARCHAR(20) NULL AFTER `sss_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `philhealth_no` VARCHAR(20) NULL AFTER `tin_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `pagibig_no` VARCHAR(20) NULL AFTER `philhealth_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `passport_no` VARCHAR(20) NULL AFTER `pagibig_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `contract` VARCHAR(50) NULL AFTER `job_title`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_hired` DATE NULL AFTER `contract`",
-            "ALTER TABLE `employees` MODIFY COLUMN `date_hired` DATE NULL DEFAULT NULL",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hire_date` DATE NULL AFTER `date_hired`",
-            "ALTER TABLE `employees` MODIFY COLUMN `hire_date` DATE NULL DEFAULT NULL",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `date_regularized` DATE NULL AFTER `hire_date`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `resume_file` VARCHAR(255) NULL AFTER `photo`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `diploma_file` VARCHAR(255) NULL AFTER `resume_file`",
+    // Verify database connection
+    if (!isset($pdo) || !$pdo) {
+        throw new Exception("Database connection failed");
+    }
+
+    // Authentication Check
+    if (!isset($_SESSION['user']) || !isset($_SESSION['role'])) {
+        header('Location: ../index.php');
+        exit;
+    }
+
+    // File upload configuration
+    define('UPLOAD_DIR', 'uploads/');
+    define('MAX_FILE_SIZE', 2 * 1024 * 1024); // 2MB
+    
+    // Create uploads directory if it doesn't exist
+    if (!is_dir(UPLOAD_DIR)) {
+        if (!mkdir(UPLOAD_DIR, 0755, true)) {
+            error_log("Failed to create upload directory");
+        }
+    }
+
+    $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+    $allowed_doc_types = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+
+    // Database connection function (PDO version)
+    function getDB() {
+        global $pdo;
+        if (!$pdo) {
+            throw new Exception("Database connection failed in getDB()");
+        }
+        return $pdo;
+    }
+
+    // Initialize database tables (with error suppression for existing columns)
+    function initDatabase() {
+        try {
+            $pdo = getDB();
             
-            // New Columns for Extended Profile
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `manager` VARCHAR(100) NULL AFTER `department`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `work_schedule` VARCHAR(100) NULL AFTER `manager`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `pay_grade` VARCHAR(50) NULL AFTER `salary`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `bank_name` VARCHAR(50) NULL AFTER `pay_grade`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `bank_account_no` VARCHAR(50) NULL AFTER `bank_name`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hmo_provider` VARCHAR(50) NULL AFTER `bank_account_no`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `hmo_number` VARCHAR(50) NULL AFTER `hmo_provider`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_vacation` FLOAT DEFAULT 0 AFTER `hmo_number`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `leave_credits_sick` FLOAT DEFAULT 0 AFTER `leave_credits_vacation`",
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `job_description` TEXT NULL AFTER `job_title`",
+            // Check if employees table exists
+            $pdo->exec("CREATE TABLE IF NOT EXISTS `employees` (
+                `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                `name` varchar(100) NOT NULL,
+                `department` varchar(100) DEFAULT NULL,
+                `job_title` varchar(100) DEFAULT NULL,
+                `salary` decimal(10,2) DEFAULT NULL,
+                `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                PRIMARY KEY (`id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-            // Status column — synced from HR1 API (Active / Inactive / Leave)
-            "ALTER TABLE `employees` ADD COLUMN IF NOT EXISTS `status` VARCHAR(20) NOT NULL DEFAULT 'Active' AFTER `job_description`"
-        ];
+            // Get existing columns
+            $stmt = $pdo->query("SHOW COLUMNS FROM `employees`");
+            $existing_columns = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $existing_columns[] = $row['Field'];
+            }
 
-        foreach ($alter_queries as $query) {
-            try {
-                $pdo->exec($query);
-            } catch (Exception $e) {
-                // Column might already exist, continue
-                error_log("Alter table warning: " . $e->getMessage());
+            // Define columns to add
+            $columns_to_add = [
+                'email' => "ALTER TABLE `employees` ADD COLUMN `email` VARCHAR(100) NULL AFTER `name`",
+                'phone' => "ALTER TABLE `employees` ADD COLUMN `phone` VARCHAR(20) NULL AFTER `email`",
+                'address' => "ALTER TABLE `employees` ADD COLUMN `address` TEXT NULL AFTER `phone`",
+                'photo' => "ALTER TABLE `employees` ADD COLUMN `photo` VARCHAR(255) NULL AFTER `address`",
+                'gender' => "ALTER TABLE `employees` ADD COLUMN `gender` VARCHAR(20) NULL AFTER `photo`",
+                'age' => "ALTER TABLE `employees` ADD COLUMN `age` INT(3) NULL AFTER `gender`",
+                'employee_id' => "ALTER TABLE `employees` ADD COLUMN `employee_id` VARCHAR(20) NULL AFTER `id`",
+                'birth_date' => "ALTER TABLE `employees` ADD COLUMN `birth_date` DATE NULL AFTER `age`",
+                'birth_place' => "ALTER TABLE `employees` ADD COLUMN `birth_place` VARCHAR(100) NULL AFTER `birth_date`",
+                'civil_status' => "ALTER TABLE `employees` ADD COLUMN `civil_status` VARCHAR(20) NULL AFTER `birth_place`",
+                'nationality' => "ALTER TABLE `employees` ADD COLUMN `nationality` VARCHAR(50) NULL AFTER `civil_status`",
+                'religion' => "ALTER TABLE `employees` ADD COLUMN `religion` VARCHAR(50) NULL AFTER `nationality`",
+                'sss_no' => "ALTER TABLE `employees` ADD COLUMN `sss_no` VARCHAR(20) NULL AFTER `religion`",
+                'tin_no' => "ALTER TABLE `employees` ADD COLUMN `tin_no` VARCHAR(20) NULL AFTER `sss_no`",
+                'philhealth_no' => "ALTER TABLE `employees` ADD COLUMN `philhealth_no` VARCHAR(20) NULL AFTER `tin_no`",
+                'pagibig_no' => "ALTER TABLE `employees` ADD COLUMN `pagibig_no` VARCHAR(20) NULL AFTER `philhealth_no`",
+                'passport_no' => "ALTER TABLE `employees` ADD COLUMN `passport_no` VARCHAR(20) NULL AFTER `pagibig_no`",
+                'contract' => "ALTER TABLE `employees` ADD COLUMN `contract` VARCHAR(50) NULL AFTER `job_title`",
+                'date_hired' => "ALTER TABLE `employees` ADD COLUMN `date_hired` DATE NULL AFTER `contract`",
+                'hire_date' => "ALTER TABLE `employees` ADD COLUMN `hire_date` DATE NULL AFTER `date_hired`",
+                'date_regularized' => "ALTER TABLE `employees` ADD COLUMN `date_regularized` DATE NULL AFTER `hire_date`",
+                'resume_file' => "ALTER TABLE `employees` ADD COLUMN `resume_file` VARCHAR(255) NULL AFTER `photo`",
+                'diploma_file' => "ALTER TABLE `employees` ADD COLUMN `diploma_file` VARCHAR(255) NULL AFTER `resume_file`",
+                'manager' => "ALTER TABLE `employees` ADD COLUMN `manager` VARCHAR(100) NULL AFTER `department`",
+                'work_schedule' => "ALTER TABLE `employees` ADD COLUMN `work_schedule` VARCHAR(100) NULL AFTER `manager`",
+                'pay_grade' => "ALTER TABLE `employees` ADD COLUMN `pay_grade` VARCHAR(50) NULL AFTER `salary`",
+                'bank_name' => "ALTER TABLE `employees` ADD COLUMN `bank_name` VARCHAR(50) NULL AFTER `pay_grade`",
+                'bank_account_no' => "ALTER TABLE `employees` ADD COLUMN `bank_account_no` VARCHAR(50) NULL AFTER `bank_name`",
+                'hmo_provider' => "ALTER TABLE `employees` ADD COLUMN `hmo_provider` VARCHAR(50) NULL AFTER `bank_account_no`",
+                'hmo_number' => "ALTER TABLE `employees` ADD COLUMN `hmo_number` VARCHAR(50) NULL AFTER `hmo_provider`",
+                'leave_credits_vacation' => "ALTER TABLE `employees` ADD COLUMN `leave_credits_vacation` FLOAT DEFAULT 0 AFTER `hmo_number`",
+                'leave_credits_sick' => "ALTER TABLE `employees` ADD COLUMN `leave_credits_sick` FLOAT DEFAULT 0 AFTER `leave_credits_vacation`",
+                'job_description' => "ALTER TABLE `employees` ADD COLUMN `job_description` TEXT NULL AFTER `job_title`",
+                'status' => "ALTER TABLE `employees` ADD COLUMN `status` VARCHAR(20) NOT NULL DEFAULT 'Active' AFTER `job_description`"
+            ];
+
+            // Add missing columns
+            foreach ($columns_to_add as $column => $query) {
+                if (!in_array($column, $existing_columns)) {
+                    try {
+                        $pdo->exec($query);
+                        error_log("Added column: $column");
+                    } catch (Exception $e) {
+                        error_log("Could not add column $column: " . $e->getMessage());
+                    }
+                }
+            }
+
+            // Create other tables
+            $tables = [
+                "CREATE TABLE IF NOT EXISTS `emergency_contacts` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `contact_name` varchar(100) NOT NULL,
+                    `relationship` varchar(50) NOT NULL,
+                    `phone` varchar(20) NOT NULL,
+                    `email` varchar(100) DEFAULT NULL,
+                    `address` text DEFAULT NULL,
+                    `is_primary` tinyint(1) DEFAULT 0,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `family_dependents` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `name` varchar(100) NOT NULL,
+                    `relationship` varchar(50) NOT NULL,
+                    `birth_date` date DEFAULT NULL,
+                    `contact_number` varchar(20) DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `salary_history` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `amount` decimal(10,2) NOT NULL,
+                    `effective_date` date NOT NULL,
+                    `type` varchar(50) NOT NULL DEFAULT 'Increase',
+                    `remarks` text DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `disciplinary_cases` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `violation` varchar(100) NOT NULL,
+                    `description` text DEFAULT NULL,
+                    `action_taken` varchar(100) DEFAULT NULL,
+                    `date_reported` date NOT NULL,
+                    `date_closed` date DEFAULT NULL,
+                    `status` varchar(20) DEFAULT 'Open',
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `performance_reviews` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `review_date` date NOT NULL,
+                    `rating` varchar(20) NOT NULL,
+                    `evaluator` varchar(100) DEFAULT NULL,
+                    `comments` text DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `educational_background` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `level` varchar(50) NOT NULL,
+                    `school_name` varchar(100) NOT NULL,
+                    `course` varchar(100) DEFAULT NULL,
+                    `year_graduated` year DEFAULT NULL,
+                    `honors` varchar(100) DEFAULT NULL,
+                    `diploma_file` varchar(255) DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `seminars` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `seminar_name` varchar(100) NOT NULL,
+                    `organizer` varchar(100) NOT NULL,
+                    `date_from` date NOT NULL,
+                    `date_to` date NOT NULL,
+                    `hours` int(4) DEFAULT NULL,
+                    `certificate` varchar(255) DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `skills` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `skill_name` varchar(100) NOT NULL,
+                    `proficiency_level` varchar(20) DEFAULT NULL,
+                    `certification` varchar(255) DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `work_experience` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `company_name` varchar(100) NOT NULL,
+                    `position` varchar(100) NOT NULL,
+                    `date_from` date NOT NULL,
+                    `date_to` date DEFAULT NULL,
+                    `is_current` tinyint(1) DEFAULT 0,
+                    `years_experience` int(2) DEFAULT NULL,
+                    `reference_name` varchar(100) DEFAULT NULL,
+                    `reference_contact` varchar(50) DEFAULT NULL,
+                    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+                
+                "CREATE TABLE IF NOT EXISTS `employee_documents` (
+                    `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `employee_id` int(6) UNSIGNED NOT NULL,
+                    `document_name` varchar(100) NOT NULL,
+                    `document_type` varchar(50) NOT NULL,
+                    `file_path` varchar(255) NOT NULL,
+                    `upload_date` timestamp NOT NULL DEFAULT current_timestamp(),
+                    PRIMARY KEY (`id`),
+                    KEY `employee_id` (`employee_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+            ];
+
+            foreach ($tables as $query) {
+                try {
+                    $pdo->exec($query);
+                } catch (Exception $e) {
+                    error_log("Error creating table: " . $e->getMessage());
+                }
+            }
+
+        } catch (Exception $e) {
+            error_log("Database initialization error: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    // Handle file upload
+    function handleFileUpload($file, $employee_id, $type = 'photo') {
+        global $allowed_types, $allowed_doc_types;
+        
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            return ['success' => false, 'message' => 'File upload error: ' . $file['error']];
+        }
+
+        if ($file['size'] > MAX_FILE_SIZE) {
+            return ['success' => false, 'message' => 'File too large (max 2MB)'];
+        }
+
+        // Check MIME type
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        $allowed = $allowed_types;
+        if (in_array($type, ['resume', 'diploma', 'certificate', 'education_diploma', 'certification', 'document'])) {
+            $allowed = array_merge($allowed_types, $allowed_doc_types);
+        }
+
+        if (!in_array($mime_type, $allowed)) {
+            return ['success' => false, 'message' => 'Invalid file type: ' . $mime_type];
+        }
+
+        // Create upload directory if it doesn't exist
+        if (!is_dir(UPLOAD_DIR)) {
+            if (!mkdir(UPLOAD_DIR, 0755, true)) {
+                return ['success' => false, 'message' => 'Failed to create upload directory'];
             }
         }
 
-        // Create emergency_contacts table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `emergency_contacts` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `contact_name` varchar(100) NOT NULL,
-            `relationship` varchar(50) NOT NULL,
-            `phone` varchar(20) NOT NULL,
-            `email` varchar(100) DEFAULT NULL,
-            `address` text DEFAULT NULL,
-            `is_primary` tinyint(1) DEFAULT 0,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+        $filename = $type . '_' . $employee_id . '_' . time() . '.' . $extension;
+        $filepath = UPLOAD_DIR . $filename;
 
-        // Create family_dependents table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `family_dependents` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `name` varchar(100) NOT NULL,
-            `relationship` varchar(50) NOT NULL,
-            `birth_date` date DEFAULT NULL,
-            `contact_number` varchar(20) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create salary_history table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `salary_history` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `amount` decimal(10,2) NOT NULL,
-            `effective_date` date NOT NULL,
-            `type` varchar(50) NOT NULL DEFAULT 'Increase',
-            `remarks` text DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create disciplinary_cases table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `disciplinary_cases` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `violation` varchar(100) NOT NULL,
-            `description` text DEFAULT NULL,
-            `action_taken` varchar(100) DEFAULT NULL,
-            `date_reported` date NOT NULL,
-            `date_closed` date DEFAULT NULL,
-            `status` varchar(20) DEFAULT 'Open',
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        
-        // Create performance_reviews table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `performance_reviews` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `review_date` date NOT NULL,
-            `rating` varchar(20) NOT NULL,
-            `evaluator` varchar(100) DEFAULT NULL,
-            `comments` text DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create educational_background table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `educational_background` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `level` varchar(50) NOT NULL,
-            `school_name` varchar(100) NOT NULL,
-            `course` varchar(100) DEFAULT NULL,
-            `year_graduated` year DEFAULT NULL,
-            `honors` varchar(100) DEFAULT NULL,
-            `diploma_file` varchar(255) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create seminars table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `seminars` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `seminar_name` varchar(100) NOT NULL,
-            `organizer` varchar(100) NOT NULL,
-            `date_from` date NOT NULL,
-            `date_to` date NOT NULL,
-            `hours` int(4) DEFAULT NULL,
-            `certificate` varchar(255) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create skills table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `skills` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `skill_name` varchar(100) NOT NULL,
-            `proficiency_level` varchar(20) DEFAULT NULL,
-            `certification` varchar(255) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Create work_experience table
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `work_experience` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `company_name` varchar(100) NOT NULL,
-            `position` varchar(100) NOT NULL,
-            `date_from` date NOT NULL,
-            `date_to` date DEFAULT NULL,
-            `is_current` tinyint(1) DEFAULT 0,
-            `years_experience` int(2) DEFAULT NULL,
-            `reference_name` varchar(100) DEFAULT NULL,
-            `reference_contact` varchar(50) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        
-        // Create employee_documents table (201 Files)
-        $pdo->exec("CREATE TABLE IF NOT EXISTS `employee_documents` (
-            `id` int(6) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `employee_id` int(6) UNSIGNED NOT NULL,
-            `document_name` varchar(100) NOT NULL,
-            `document_type` varchar(50) NOT NULL,
-            `file_path` varchar(255) NOT NULL,
-            `upload_date` timestamp NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `employee_id` (`employee_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-
-        // Update existing employees with sample data if needed
-        $stmt = $pdo->query("SELECT COUNT(*) as count FROM `employees` WHERE `employee_id` IS NULL LIMIT 1");
-        $row = $stmt->fetch();
-        if ($row['count'] > 0) {
-            $pdo->exec("UPDATE `employees` SET 
-                `employee_id` = CONCAT('EMP', LPAD(`id`, 4, '0')),
-                `email` = CONCAT(LOWER(REPLACE(`name`, ' ', '.')), '@company.com'),
-                `phone` = CONCAT('555-', LPAD(FLOOR(RAND() * 1000), 3, '0'), '-', LPAD(FLOOR(RAND() * 10000), 4, '0'))
-            WHERE `employee_id` IS NULL");
+        if (move_uploaded_file($file['tmp_name'], $filepath)) {
+            return ['success' => true, 'filename' => $filename];
         }
-    } catch (Exception $e) {
-        error_log("Database initialization error: " . $e->getMessage());
-    }
-}
 
-// Handle file upload
-function handleFileUpload($file, $employee_id, $type = 'photo')
-{
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        return ['success' => false, 'message' => 'File upload error'];
+        return ['success' => false, 'message' => 'Failed to save file'];
     }
 
-    if ($file['size'] > MAX_FILE_SIZE) {
-        return ['success' => false, 'message' => 'File too large'];
-    }
+    // Function to Get Employees 
+    function getEmployees($department = null, $status = null, $search = null) {
+        try {
+            $pdo = getDB();
+            $sql = "SELECT * FROM employees WHERE 1=1";
+            $params = [];
 
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime_type = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
+            if ($department) {
+                $sql .= " AND department = ?";
+                $params[] = $department;
+            }
+            if ($status) {
+                $sql .= " AND status = ?";
+                $params[] = $status;
+            }
+            if ($search) {
+                $sql .= " AND (name LIKE ? OR employee_id LIKE ?)";
+                $params[] = "%$search%";
+                $params[] = "%$search%";
+            }
 
-    $allowed_types = $GLOBALS['allowed_types'];
-    if ($type === 'resume' || $type === 'diploma' || $type === 'certificate' || $type === 'education_diploma' || $type === 'certification' || $type === 'document') {
-        $allowed_types = array_merge($allowed_types, $GLOBALS['allowed_doc_types']);
-    }
-
-    if (!in_array($mime_type, $allowed_types)) {
-        return ['success' => false, 'message' => 'Invalid file type'];
-    }
-
-    if (!is_dir(UPLOAD_DIR)) {
-        mkdir(UPLOAD_DIR, 0755, true);
-    }
-
-    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-    $filename = $type . '_' . $employee_id . '_' . time() . '.' . $extension;
-    $filepath = UPLOAD_DIR . $filename;
-
-    if (move_uploaded_file($file['tmp_name'], $filepath)) {
-        return ['success' => true, 'filename' => $filename];
-    }
-
-    return ['success' => false, 'message' => 'Failed to save file'];
-}
-
-// Function to Get Employees 
-function getEmployees($department = null, $status = null, $search = null) {
-    global $pdo;
-    $sql = "SELECT * FROM employees WHERE 1=1";
-    $params = [];
-
-    if ($department) {
-        $sql .= " AND department = ?";
-        $params[] = $department;
-    }
-    if ($status) {
-        $sql .= " AND status = ?";
-        $params[] = $status;
-    }
-    if ($search) {
-        $sql .= " AND (name LIKE ? OR employee_id LIKE ?)";
-        $params[] = "%$search%";
-        $params[] = "%$search%";
-    }
-
-    $sql .= " ORDER BY id DESC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll();
-}
-
-// Get family dependents
-function getDependents($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `family_dependents` WHERE employee_id = ? ORDER BY birth_date DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get salary history
-function getSalaryHistory($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `salary_history` WHERE employee_id = ? ORDER BY effective_date DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get disciplinary cases
-function getDisciplinaryCases($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `disciplinary_cases` WHERE employee_id = ? ORDER BY date_reported DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get performance reviews
-function getPerformanceReviews($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `performance_reviews` WHERE employee_id = ? ORDER BY review_date DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get employee by ID
-function getEmployee($id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `employees` WHERE id = ?");
-    $stmt->execute([$id]);
-    return $stmt->fetch();
-}
-
-// Get emergency contacts for employee
-function getEmergencyContacts($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `emergency_contacts` WHERE employee_id = ? ORDER BY is_primary DESC, contact_name ASC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get educational background for employee
-function getEducationalBackground($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `educational_background` WHERE employee_id = ? ORDER BY 
-        CASE level 
-            WHEN 'Doctorate' THEN 1
-            WHEN 'Master' THEN 2
-            WHEN 'Bachelor' THEN 3
-            WHEN 'College' THEN 4
-            WHEN 'High School' THEN 5
-            WHEN 'Elementary' THEN 6
-            ELSE 7
-        END");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get seminars for employee
-function getSeminars($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `seminars` WHERE employee_id = ? ORDER BY date_from DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get skills for employee
-function getSkills($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `skills` WHERE employee_id = ? ORDER BY proficiency_level DESC, skill_name ASC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Get work experience for employee
-function getWorkExperience($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `work_experience` WHERE employee_id = ? ORDER BY date_from DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Update employee profile
-function updateEmployee($id, $data)
-{
-    $pdo = getDB();
-    $fields = [];
-    $params = [];
-
-    $allowed_fields = [
-        'name',
-        'email',
-        'phone',
-        'address',
-        'department',
-        'job_title',
-        'contract',
-        'gender',
-        'age',
-        'status',
-        'salary',
-        'birth_date',
-        'birth_place',
-        'civil_status',
-        'nationality',
-        'religion',
-        'sss_no',
-        'tin_no',
-        'philhealth_no',
-        'pagibig_no',
-        'passport_no',
-        'date_hired',
-        'hire_date',
-        'date_regularized',
-        'manager',
-        'work_schedule',
-        'pay_grade',
-        'bank_name',
-        'bank_account_no',
-        'hmo_provider',
-        'hmo_number',
-        'leave_credits_vacation',
-        'leave_credits_sick',
-        'job_description'
-    ];
-
-    foreach ($allowed_fields as $field) {
-        if (isset($data[$field])) {
-            $fields[] = "`$field` = ?";
-            $params[] = $data[$field];
+            $sql .= " ORDER BY id DESC";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getEmployees error: " . $e->getMessage());
+            return [];
         }
     }
 
-    if (empty($fields)) {
-        return false;
+    // Get employee by ID
+    function getEmployee($id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `employees` WHERE id = ?");
+            $stmt->execute([$id]);
+            return $stmt->fetch();
+        } catch (Exception $e) {
+            error_log("getEmployee error: " . $e->getMessage());
+            return null;
+        }
     }
 
-    $params[] = $id;
-
-    $sql = "UPDATE `employees` SET " . implode(', ', $fields) . " WHERE id = ?";
-
-    $stmt = $pdo->prepare($sql);
-    return $stmt->execute($params);
-}
-
-// Add/update emergency contact
-function saveEmergencyContact($employee_id, $contact_data, $contact_id = null)
-{
-    $pdo = getDB();
-
-    if ($contact_id) {
-        // Update existing contact
-        $sql = "UPDATE `emergency_contacts` SET contact_name=?, relationship=?, phone=?, email=?, address=?, is_primary=? WHERE id=? AND employee_id=?";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $contact_data['contact_name'],
-            $contact_data['relationship'],
-            $contact_data['phone'],
-            $contact_data['email'],
-            $contact_data['address'],
-            $contact_data['is_primary'],
-            $contact_id,
-            $employee_id
-        ]);
-    } else {
-        // Insert new contact
-        $sql = "INSERT INTO `emergency_contacts` (employee_id, contact_name, relationship, phone, email, address, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $contact_data['contact_name'],
-            $contact_data['relationship'],
-            $contact_data['phone'],
-            $contact_data['email'],
-            $contact_data['address'],
-            $contact_data['is_primary']
-        ]);
+    // Get emergency contacts
+    function getEmergencyContacts($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `emergency_contacts` WHERE employee_id = ? ORDER BY is_primary DESC, contact_name ASC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getEmergencyContacts error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update educational background
-function saveEducationalBackground($employee_id, $education_data, $education_id = null)
-{
-    $pdo = getDB();
-
-    if ($education_id) {
-        // Update existing education
-        $sql = "UPDATE `educational_background` SET level=?, school_name=?, course=?, year_graduated=?, honors=?, diploma_file=? WHERE id=? AND employee_id=?";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $education_data['level'],
-            $education_data['school_name'],
-            $education_data['course'],
-            $education_data['year_graduated'],
-            $education_data['honors'],
-            $education_data['diploma_file'],
-            $education_id,
-            $employee_id
-        ]);
-    } else {
-        // Insert new education
-        $sql = "INSERT INTO `educational_background` (employee_id, level, school_name, course, year_graduated, honors, diploma_file) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $education_data['level'],
-            $education_data['school_name'],
-            $education_data['course'],
-            $education_data['year_graduated'],
-            $education_data['honors'],
-            $education_data['diploma_file']
-        ]);
+    // Get dependents
+    function getDependents($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `family_dependents` WHERE employee_id = ? ORDER BY birth_date DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getDependents error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update seminar
-function saveSeminar($employee_id, $seminar_data, $seminar_id = null)
-{
-    $pdo = getDB();
-
-    if ($seminar_id) {
-        // Update existing seminar
-        $sql = "UPDATE `seminars` SET seminar_name=?, organizer=?, date_from=?, date_to=?, hours=?, certificate=? WHERE id=? AND employee_id=?";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $seminar_data['seminar_name'],
-            $seminar_data['organizer'],
-            $seminar_data['date_from'],
-            $seminar_data['date_to'],
-            $seminar_data['hours'],
-            $seminar_data['certificate'],
-            $seminar_id,
-            $employee_id
-        ]);
-    } else {
-        // Insert new seminar
-        $sql = "INSERT INTO `seminars` (employee_id, seminar_name, organizer, date_from, date_to, hours, certificate) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $seminar_data['seminar_name'],
-            $seminar_data['organizer'],
-            $seminar_data['date_from'],
-            $seminar_data['date_to'],
-            $seminar_data['hours'],
-            $seminar_data['certificate']
-        ]);
+    // Get salary history
+    function getSalaryHistory($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `salary_history` WHERE employee_id = ? ORDER BY effective_date DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getSalaryHistory error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update skill
-function saveSkill($employee_id, $skill_data, $skill_id = null)
-{
-    $pdo = getDB();
-
-    if ($skill_id) {
-        // Update existing skill
-        $sql = "UPDATE `skills` SET skill_name=?, proficiency_level=?, certification=? WHERE id=? AND employee_id=?";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $skill_data['skill_name'],
-            $skill_data['proficiency_level'],
-            $skill_data['certification'],
-            $skill_id,
-            $employee_id
-        ]);
-    } else {
-        // Insert new skill
-        $sql = "INSERT INTO `skills` (employee_id, skill_name, proficiency_level, certification) VALUES (?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $skill_data['skill_name'],
-            $skill_data['proficiency_level'],
-            $skill_data['certification']
-        ]);
+    // Get disciplinary cases
+    function getDisciplinaryCases($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `disciplinary_cases` WHERE employee_id = ? ORDER BY date_reported DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getDisciplinaryCases error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update work experience
-function saveWorkExperience($employee_id, $work_data, $work_id = null)
-{
-    $pdo = getDB();
-
-    if ($work_id) {
-        // Update existing work experience
-        $sql = "UPDATE `work_experience` SET company_name=?, position=?, date_from=?, date_to=?, is_current=?, years_experience=?, reference_name=?, reference_contact=? WHERE id=? AND employee_id=?";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $work_data['company_name'],
-            $work_data['position'],
-            $work_data['date_from'],
-            $work_data['date_to'],
-            $work_data['is_current'],
-            $work_data['years_experience'],
-            $work_data['reference_name'],
-            $work_data['reference_contact'],
-            $work_id,
-            $employee_id
-        ]);
-    } else {
-        // Insert new work experience
-        $sql = "INSERT INTO `work_experience` (employee_id, company_name, position, date_from, date_to, is_current, years_experience, reference_name, reference_contact) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $work_data['company_name'],
-            $work_data['position'],
-            $work_data['date_from'],
-            $work_data['date_to'],
-            $work_data['is_current'],
-            $work_data['years_experience'],
-            $work_data['reference_name'],
-            $work_data['reference_contact']
-        ]);
+    // Get performance reviews
+    function getPerformanceReviews($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `performance_reviews` WHERE employee_id = ? ORDER BY review_date DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getPerformanceReviews error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update dependent
-function saveDependent($employee_id, $data, $id = null) {
-    $pdo = getDB();
-    if ($id) {
-        $stmt = $pdo->prepare("UPDATE family_dependents SET name=?, relationship=?, birth_date=?, contact_number=? WHERE id=? AND employee_id=?");
-        return $stmt->execute([$data['name'], $data['relationship'], $data['birth_date'], $data['contact_number'], $id, $employee_id]);
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO family_dependents (employee_id, name, relationship, birth_date, contact_number) VALUES (?, ?, ?, ?, ?)");
-        return $stmt->execute([$employee_id, $data['name'], $data['relationship'], $data['birth_date'], $data['contact_number']]);
+    // Get educational background
+    function getEducationalBackground($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `educational_background` WHERE employee_id = ? ORDER BY 
+                CASE level 
+                    WHEN 'Doctorate' THEN 1
+                    WHEN 'Master' THEN 2
+                    WHEN 'Bachelor' THEN 3
+                    WHEN 'College' THEN 4
+                    WHEN 'High School' THEN 5
+                    WHEN 'Elementary' THEN 6
+                    ELSE 7
+                END");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getEducationalBackground error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update salary history
-function saveSalaryHistory($employee_id, $data, $id = null) {
-    $pdo = getDB();
-    if ($id) {
-        $stmt = $pdo->prepare("UPDATE salary_history SET amount=?, effective_date=?, type=?, remarks=? WHERE id=? AND employee_id=?");
-        return $stmt->execute([$data['amount'], $data['effective_date'], $data['type'], $data['remarks'], $id, $employee_id]);
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO salary_history (employee_id, amount, effective_date, type, remarks) VALUES (?, ?, ?, ?, ?)");
-        return $stmt->execute([$employee_id, $data['amount'], $data['effective_date'], $data['type'], $data['remarks']]);
+    // Get seminars
+    function getSeminars($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `seminars` WHERE employee_id = ? ORDER BY date_from DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getSeminars error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update disciplinary case
-function saveDisciplinaryCase($employee_id, $data, $id = null) {
-    $pdo = getDB();
-    if ($id) {
-        $stmt = $pdo->prepare("UPDATE disciplinary_cases SET violation=?, description=?, action_taken=?, date_reported=?, date_closed=?, status=? WHERE id=? AND employee_id=?");
-        return $stmt->execute([$data['violation'], $data['description'], $data['action_taken'], $data['date_reported'], $data['date_closed'], $data['status'], $id, $employee_id]);
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO disciplinary_cases (employee_id, violation, description, action_taken, date_reported, date_closed, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        return $stmt->execute([$employee_id, $data['violation'], $data['description'], $data['action_taken'], $data['date_reported'], $data['date_closed'], $data['status']]);
+    // Get skills
+    function getSkills($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `skills` WHERE employee_id = ? ORDER BY proficiency_level DESC, skill_name ASC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getSkills error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Add/update performance review
-function savePerformanceReview($employee_id, $data, $id = null) {
-    $pdo = getDB();
-    if ($id) {
-        $stmt = $pdo->prepare("UPDATE performance_reviews SET review_date=?, rating=?, evaluator=?, comments=? WHERE id=? AND employee_id=?");
-        return $stmt->execute([$data['review_date'], $data['rating'], $data['evaluator'], $data['comments'], $id, $employee_id]);
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO performance_reviews (employee_id, review_date, rating, evaluator, comments) VALUES (?, ?, ?, ?, ?)");
-        return $stmt->execute([$employee_id, $data['review_date'], $data['rating'], $data['evaluator'], $data['comments']]);
+    // Get work experience
+    function getWorkExperience($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `work_experience` WHERE employee_id = ? ORDER BY date_from DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getWorkExperience error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Delete emergency contact
-function deleteEmergencyContact($contact_id, $employee_id)
-{
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `emergency_contacts` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$contact_id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete emergency contact error: " . $e->getMessage());
-        return false;
+    // Get documents
+    function getEmployeeDocuments($employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("SELECT * FROM `employee_documents` WHERE employee_id = ? ORDER BY upload_date DESC");
+            $stmt->execute([$employee_id]);
+            return $stmt->fetchAll();
+        } catch (Exception $e) {
+            error_log("getEmployeeDocuments error: " . $e->getMessage());
+            return [];
+        }
     }
-}
 
-// Delete educational background
-function deleteEducationalBackground($education_id, $employee_id)
-{
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `educational_background` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$education_id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete educational background error: " . $e->getMessage());
-        return false;
-    }
-}
+    // Update employee profile
+    function updateEmployee($id, $data) {
+        try {
+            $pdo = getDB();
+            $fields = [];
+            $params = [];
 
-// Delete seminar
-function deleteSeminar($seminar_id, $employee_id)
-{
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `seminars` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$seminar_id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete seminar error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete skill
-function deleteSkill($skill_id, $employee_id)
-{
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `skills` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$skill_id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete skill error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete work experience
-function deleteWorkExperience($work_id, $employee_id)
-{
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `work_experience` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$work_id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete work experience error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete dependent
-function deleteDependent($id, $employee_id) {
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM family_dependents WHERE id=? AND employee_id=?");
-        return $stmt->execute([$id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete dependent error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete salary history
-function deleteSalaryHistory($id, $employee_id) {
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM salary_history WHERE id=? AND employee_id=?");
-        return $stmt->execute([$id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete salary history error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete disciplinary case
-function deleteDisciplinaryCase($id, $employee_id) {
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM disciplinary_cases WHERE id=? AND employee_id=?");
-        return $stmt->execute([$id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete disciplinary case error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Delete performance review
-function deletePerformanceReview($id, $employee_id) {
-    try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM performance_reviews WHERE id=? AND employee_id=?");
-        return $stmt->execute([$id, $employee_id]);
-    } catch (Exception $e) {
-        error_log("Delete performance review error: " . $e->getMessage());
-        return false;
-    }
-}
-
-
-// Get documents for employee
-function getEmployeeDocuments($employee_id)
-{
-    $pdo = getDB();
-    $stmt = $pdo->prepare("SELECT * FROM `employee_documents` WHERE employee_id = ? ORDER BY upload_date DESC");
-    $stmt->execute([$employee_id]);
-    return $stmt->fetchAll();
-}
-
-// Add/update employee document
-function saveEmployeeDocument($employee_id, $doc_data, $doc_id = null)
-{
-    $pdo = getDB();
-
-    if ($doc_id) {
-        $sql = "UPDATE `employee_documents` SET document_name=?, document_type=? WHERE id=? AND employee_id=?";
-        $params = [
-            $doc_data['document_name'],
-            $doc_data['document_type'],
-            $doc_id,
-            $employee_id
-        ];
-        
-        if (isset($doc_data['file_path'])) {
-             $sql = "UPDATE `employee_documents` SET document_name=?, document_type=?, file_path=? WHERE id=? AND employee_id=?";
-             $params = [
-                $doc_data['document_name'],
-                $doc_data['document_type'],
-                $doc_data['file_path'],
-                $doc_id,
-                $employee_id
+            $allowed_fields = [
+                'name', 'email', 'phone', 'address', 'department', 'job_title', 'contract',
+                'gender', 'age', 'status', 'salary', 'birth_date', 'birth_place', 'civil_status',
+                'nationality', 'religion', 'sss_no', 'tin_no', 'philhealth_no', 'pagibig_no',
+                'passport_no', 'date_hired', 'hire_date', 'date_regularized', 'manager',
+                'work_schedule', 'pay_grade', 'bank_name', 'bank_account_no', 'hmo_provider',
+                'hmo_number', 'leave_credits_vacation', 'leave_credits_sick', 'job_description'
             ];
+
+            foreach ($allowed_fields as $field) {
+                if (isset($data[$field]) && $data[$field] !== '') {
+                    $fields[] = "`$field` = ?";
+                    $params[] = $data[$field];
+                }
+            }
+
+            if (empty($fields)) {
+                return true; // Nothing to update
+            }
+
+            $params[] = $id;
+            $sql = "UPDATE `employees` SET " . implode(', ', $fields) . " WHERE id = ?";
+            $stmt = $pdo->prepare($sql);
+            return $stmt->execute($params);
+        } catch (Exception $e) {
+            error_log("updateEmployee error: " . $e->getMessage());
+            return false;
         }
-
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute($params);
-
-    } else {
-        $sql = "INSERT INTO `employee_documents` (employee_id, document_name, document_type, file_path) VALUES (?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        return $stmt->execute([
-            $employee_id,
-            $doc_data['document_name'],
-            $doc_data['document_type'],
-            $doc_data['file_path']
-        ]);
     }
-}
 
-// Delete employee document
-function deleteEmployeeDocument($doc_id, $employee_id)
-{
+    // Save emergency contact
+    function saveEmergencyContact($employee_id, $contact_data, $contact_id = null) {
+        try {
+            $pdo = getDB();
+            if ($contact_id) {
+                $sql = "UPDATE `emergency_contacts` SET contact_name=?, relationship=?, phone=?, email=?, address=?, is_primary=? WHERE id=? AND employee_id=?";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $contact_data['contact_name'],
+                    $contact_data['relationship'],
+                    $contact_data['phone'],
+                    $contact_data['email'] ?? null,
+                    $contact_data['address'] ?? null,
+                    $contact_data['is_primary'] ?? 0,
+                    $contact_id,
+                    $employee_id
+                ]);
+            } else {
+                $sql = "INSERT INTO `emergency_contacts` (employee_id, contact_name, relationship, phone, email, address, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $contact_data['contact_name'],
+                    $contact_data['relationship'],
+                    $contact_data['phone'],
+                    $contact_data['email'] ?? null,
+                    $contact_data['address'] ?? null,
+                    $contact_data['is_primary'] ?? 0
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveEmergencyContact error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save dependent
+    function saveDependent($employee_id, $data, $id = null) {
+        try {
+            $pdo = getDB();
+            if ($id) {
+                $stmt = $pdo->prepare("UPDATE family_dependents SET name=?, relationship=?, birth_date=?, contact_number=? WHERE id=? AND employee_id=?");
+                return $stmt->execute([
+                    $data['name'], 
+                    $data['relationship'], 
+                    $data['birth_date'] ?? null, 
+                    $data['contact_number'] ?? null, 
+                    $id, 
+                    $employee_id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO family_dependents (employee_id, name, relationship, birth_date, contact_number) VALUES (?, ?, ?, ?, ?)");
+                return $stmt->execute([
+                    $employee_id, 
+                    $data['name'], 
+                    $data['relationship'], 
+                    $data['birth_date'] ?? null, 
+                    $data['contact_number'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveDependent error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save salary history
+    function saveSalaryHistory($employee_id, $data, $id = null) {
+        try {
+            $pdo = getDB();
+            if ($id) {
+                $stmt = $pdo->prepare("UPDATE salary_history SET amount=?, effective_date=?, type=?, remarks=? WHERE id=? AND employee_id=?");
+                return $stmt->execute([
+                    $data['amount'], 
+                    $data['effective_date'], 
+                    $data['type'], 
+                    $data['remarks'] ?? null, 
+                    $id, 
+                    $employee_id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO salary_history (employee_id, amount, effective_date, type, remarks) VALUES (?, ?, ?, ?, ?)");
+                return $stmt->execute([
+                    $employee_id, 
+                    $data['amount'], 
+                    $data['effective_date'], 
+                    $data['type'], 
+                    $data['remarks'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveSalaryHistory error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save disciplinary case
+    function saveDisciplinaryCase($employee_id, $data, $id = null) {
+        try {
+            $pdo = getDB();
+            if ($id) {
+                $stmt = $pdo->prepare("UPDATE disciplinary_cases SET violation=?, description=?, action_taken=?, date_reported=?, date_closed=?, status=? WHERE id=? AND employee_id=?");
+                return $stmt->execute([
+                    $data['violation'], 
+                    $data['description'] ?? null, 
+                    $data['action_taken'] ?? null, 
+                    $data['date_reported'], 
+                    $data['date_closed'] ?? null, 
+                    $data['status'], 
+                    $id, 
+                    $employee_id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO disciplinary_cases (employee_id, violation, description, action_taken, date_reported, date_closed, status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                return $stmt->execute([
+                    $employee_id, 
+                    $data['violation'], 
+                    $data['description'] ?? null, 
+                    $data['action_taken'] ?? null, 
+                    $data['date_reported'], 
+                    $data['date_closed'] ?? null, 
+                    $data['status']
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveDisciplinaryCase error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save performance review
+    function savePerformanceReview($employee_id, $data, $id = null) {
+        try {
+            $pdo = getDB();
+            if ($id) {
+                $stmt = $pdo->prepare("UPDATE performance_reviews SET review_date=?, rating=?, evaluator=?, comments=? WHERE id=? AND employee_id=?");
+                return $stmt->execute([
+                    $data['review_date'], 
+                    $data['rating'], 
+                    $data['evaluator'] ?? null, 
+                    $data['comments'] ?? null, 
+                    $id, 
+                    $employee_id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO performance_reviews (employee_id, review_date, rating, evaluator, comments) VALUES (?, ?, ?, ?, ?)");
+                return $stmt->execute([
+                    $employee_id, 
+                    $data['review_date'], 
+                    $data['rating'], 
+                    $data['evaluator'] ?? null, 
+                    $data['comments'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("savePerformanceReview error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save educational background
+    function saveEducationalBackground($employee_id, $education_data, $education_id = null) {
+        try {
+            $pdo = getDB();
+            if ($education_id) {
+                $sql = "UPDATE `educational_background` SET level=?, school_name=?, course=?, year_graduated=?, honors=?, diploma_file=? WHERE id=? AND employee_id=?";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $education_data['level'],
+                    $education_data['school_name'],
+                    $education_data['course'] ?? null,
+                    $education_data['year_graduated'] ?? null,
+                    $education_data['honors'] ?? null,
+                    $education_data['diploma_file'] ?? null,
+                    $education_id,
+                    $employee_id
+                ]);
+            } else {
+                $sql = "INSERT INTO `educational_background` (employee_id, level, school_name, course, year_graduated, honors, diploma_file) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $education_data['level'],
+                    $education_data['school_name'],
+                    $education_data['course'] ?? null,
+                    $education_data['year_graduated'] ?? null,
+                    $education_data['honors'] ?? null,
+                    $education_data['diploma_file'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveEducationalBackground error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save seminar
+    function saveSeminar($employee_id, $seminar_data, $seminar_id = null) {
+        try {
+            $pdo = getDB();
+            if ($seminar_id) {
+                $sql = "UPDATE `seminars` SET seminar_name=?, organizer=?, date_from=?, date_to=?, hours=?, certificate=? WHERE id=? AND employee_id=?";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $seminar_data['seminar_name'],
+                    $seminar_data['organizer'],
+                    $seminar_data['date_from'],
+                    $seminar_data['date_to'],
+                    $seminar_data['hours'] ?? null,
+                    $seminar_data['certificate'] ?? null,
+                    $seminar_id,
+                    $employee_id
+                ]);
+            } else {
+                $sql = "INSERT INTO `seminars` (employee_id, seminar_name, organizer, date_from, date_to, hours, certificate) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $seminar_data['seminar_name'],
+                    $seminar_data['organizer'],
+                    $seminar_data['date_from'],
+                    $seminar_data['date_to'],
+                    $seminar_data['hours'] ?? null,
+                    $seminar_data['certificate'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveSeminar error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save skill
+    function saveSkill($employee_id, $skill_data, $skill_id = null) {
+        try {
+            $pdo = getDB();
+            if ($skill_id) {
+                $sql = "UPDATE `skills` SET skill_name=?, proficiency_level=?, certification=? WHERE id=? AND employee_id=?";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $skill_data['skill_name'],
+                    $skill_data['proficiency_level'],
+                    $skill_data['certification'] ?? null,
+                    $skill_id,
+                    $employee_id
+                ]);
+            } else {
+                $sql = "INSERT INTO `skills` (employee_id, skill_name, proficiency_level, certification) VALUES (?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $skill_data['skill_name'],
+                    $skill_data['proficiency_level'],
+                    $skill_data['certification'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveSkill error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save work experience
+    function saveWorkExperience($employee_id, $work_data, $work_id = null) {
+        try {
+            $pdo = getDB();
+            if ($work_id) {
+                $sql = "UPDATE `work_experience` SET company_name=?, position=?, date_from=?, date_to=?, is_current=?, years_experience=?, reference_name=?, reference_contact=? WHERE id=? AND employee_id=?";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $work_data['company_name'],
+                    $work_data['position'],
+                    $work_data['date_from'],
+                    $work_data['date_to'] ?? null,
+                    $work_data['is_current'] ?? 0,
+                    $work_data['years_experience'] ?? null,
+                    $work_data['reference_name'] ?? null,
+                    $work_data['reference_contact'] ?? null,
+                    $work_id,
+                    $employee_id
+                ]);
+            } else {
+                $sql = "INSERT INTO `work_experience` (employee_id, company_name, position, date_from, date_to, is_current, years_experience, reference_name, reference_contact) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $work_data['company_name'],
+                    $work_data['position'],
+                    $work_data['date_from'],
+                    $work_data['date_to'] ?? null,
+                    $work_data['is_current'] ?? 0,
+                    $work_data['years_experience'] ?? null,
+                    $work_data['reference_name'] ?? null,
+                    $work_data['reference_contact'] ?? null
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveWorkExperience error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Save document
+    function saveEmployeeDocument($employee_id, $doc_data, $doc_id = null) {
+        try {
+            $pdo = getDB();
+            if ($doc_id) {
+                if (isset($doc_data['file_path'])) {
+                    $sql = "UPDATE `employee_documents` SET document_name=?, document_type=?, file_path=? WHERE id=? AND employee_id=?";
+                    $params = [
+                        $doc_data['document_name'],
+                        $doc_data['document_type'],
+                        $doc_data['file_path'],
+                        $doc_id,
+                        $employee_id
+                    ];
+                } else {
+                    $sql = "UPDATE `employee_documents` SET document_name=?, document_type=? WHERE id=? AND employee_id=?";
+                    $params = [
+                        $doc_data['document_name'],
+                        $doc_data['document_type'],
+                        $doc_id,
+                        $employee_id
+                    ];
+                }
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute($params);
+            } else {
+                if (!isset($doc_data['file_path'])) {
+                    return false;
+                }
+                $sql = "INSERT INTO `employee_documents` (employee_id, document_name, document_type, file_path) VALUES (?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                return $stmt->execute([
+                    $employee_id,
+                    $doc_data['document_name'],
+                    $doc_data['document_type'],
+                    $doc_data['file_path']
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("saveEmployeeDocument error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Delete functions
+    function deleteEmergencyContact($contact_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM `emergency_contacts` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$contact_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete emergency contact error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteEducationalBackground($education_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM `educational_background` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$education_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete educational background error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteSeminar($seminar_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM `seminars` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$seminar_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete seminar error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteSkill($skill_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM `skills` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$skill_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete skill error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteWorkExperience($work_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM `work_experience` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$work_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete work experience error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteDependent($id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM family_dependents WHERE id=? AND employee_id=?");
+            return $stmt->execute([$id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete dependent error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteSalaryHistory($id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM salary_history WHERE id=? AND employee_id=?");
+            return $stmt->execute([$id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete salary history error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteDisciplinaryCase($id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM disciplinary_cases WHERE id=? AND employee_id=?");
+            return $stmt->execute([$id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete disciplinary case error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deletePerformanceReview($id, $employee_id) {
+        try {
+            $pdo = getDB();
+            $stmt = $pdo->prepare("DELETE FROM performance_reviews WHERE id=? AND employee_id=?");
+            return $stmt->execute([$id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete performance review error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    function deleteEmployeeDocument($doc_id, $employee_id) {
+        try {
+            $pdo = getDB();
+            // First get the file path to delete the actual file
+            $stmt = $pdo->prepare("SELECT file_path FROM `employee_documents` WHERE id = ? AND employee_id = ?");
+            $stmt->execute([$doc_id, $employee_id]);
+            $doc = $stmt->fetch();
+            
+            if ($doc && !empty($doc['file_path']) && file_exists(UPLOAD_DIR . $doc['file_path'])) {
+                unlink(UPLOAD_DIR . $doc['file_path']);
+            }
+            
+            // Delete the database record
+            $stmt = $pdo->prepare("DELETE FROM `employee_documents` WHERE id = ? AND employee_id = ?");
+            return $stmt->execute([$doc_id, $employee_id]);
+        } catch (Exception $e) {
+            error_log("Delete document error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // Initialize database
     try {
-        $pdo = getDB();
-        $stmt = $pdo->prepare("DELETE FROM `employee_documents` WHERE id = ? AND employee_id = ?");
-        return $stmt->execute([$doc_id, $employee_id]);
+        initDatabase();
     } catch (Exception $e) {
-        error_log("Delete document error: " . $e->getMessage());
-        return false;
+        error_log("Failed to initialize database: " . $e->getMessage());
+        // Don't throw, just log - we can still try to use existing tables
     }
-}
 
-// Initialize database
-initDatabase();
+    // Handle form submissions
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $action = $_POST['action'] ?? '';
+        $response = ['success' => false, 'message' => ''];
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    $response = ['success' => false, 'message' => ''];
-
-    try {
-        switch ($action) {
-            case 'update_profile':
-                $employee_id = $_POST['employee_id'] ?? '';
-                if ($employee_id && updateEmployee($employee_id, $_POST)) {
-                    // Handle photo upload
-                    if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
-                        $upload_result = handleFileUpload($_FILES['photo'], $employee_id, 'photo');
-                        if ($upload_result['success']) {
-                            $pdo = getDB();
-                            $stmt = $pdo->prepare("UPDATE employees SET photo = ? WHERE id = ?");
-                            $stmt->execute([$upload_result['filename'], $employee_id]);
+        try {
+            switch ($action) {
+                case 'update_profile':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if ($employee_id) {
+                        $update_result = updateEmployee($employee_id, $_POST);
+                        
+                        // Handle photo upload
+                        if (isset($_FILES['photo']) && $_FILES['photo']['error'] === UPLOAD_ERR_OK) {
+                            $upload_result = handleFileUpload($_FILES['photo'], $employee_id, 'photo');
+                            if ($upload_result['success']) {
+                                $pdo = getDB();
+                                $stmt = $pdo->prepare("UPDATE employees SET photo = ? WHERE id = ?");
+                                $stmt->execute([$upload_result['filename'], $employee_id]);
+                            }
                         }
-                    }
-                    // Handle resume upload
-                    if (isset($_FILES['resume_file']) && $_FILES['resume_file']['error'] === UPLOAD_ERR_OK) {
-                        $upload_result = handleFileUpload($_FILES['resume_file'], $employee_id, 'resume');
-                        if ($upload_result['success']) {
-                            $pdo = getDB();
-                            $stmt = $pdo->prepare("UPDATE employees SET resume_file = ? WHERE id = ?");
-                            $stmt->execute([$upload_result['filename'], $employee_id]);
+                        // Handle resume upload
+                        if (isset($_FILES['resume_file']) && $_FILES['resume_file']['error'] === UPLOAD_ERR_OK) {
+                            $upload_result = handleFileUpload($_FILES['resume_file'], $employee_id, 'resume');
+                            if ($upload_result['success']) {
+                                $pdo = getDB();
+                                $stmt = $pdo->prepare("UPDATE employees SET resume_file = ? WHERE id = ?");
+                                $stmt->execute([$upload_result['filename'], $employee_id]);
+                            }
                         }
+                        // Handle diploma upload
+                        if (isset($_FILES['diploma_file']) && $_FILES['diploma_file']['error'] === UPLOAD_ERR_OK) {
+                            $upload_result = handleFileUpload($_FILES['diploma_file'], $employee_id, 'diploma');
+                            if ($upload_result['success']) {
+                                $pdo = getDB();
+                                $stmt = $pdo->prepare("UPDATE employees SET diploma_file = ? WHERE id = ?");
+                                $stmt->execute([$upload_result['filename'], $employee_id]);
+                            }
+                        }
+                        
+                        $response = ['success' => true, 'message' => 'Profile updated successfully'];
+                    } else {
+                        $response['message'] = 'Invalid employee ID';
                     }
-                    // Handle diploma upload
+                    break;
+
+                case 'save_contact':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $contact_id = $_POST['contact_id'] ?? null;
+                    if ($employee_id && saveEmergencyContact($employee_id, $_POST, $contact_id)) {
+                        $response = ['success' => true, 'message' => 'Contact saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save contact';
+                    }
+                    break;
+
+                case 'save_dependent':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $id = $_POST['dependent_id'] ?? null;
+                    if ($employee_id && saveDependent($employee_id, $_POST, $id)) {
+                        $response = ['success' => true, 'message' => 'Dependent saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save dependent';
+                    }
+                    break;
+
+                case 'save_salary':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $id = $_POST['salary_id'] ?? null;
+                    if ($employee_id && saveSalaryHistory($employee_id, $_POST, $id)) {
+                        $response = ['success' => true, 'message' => 'Salary history saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save salary history';
+                    }
+                    break;
+
+                case 'save_disciplinary':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $id = $_POST['disciplinary_id'] ?? null;
+                    if ($employee_id && saveDisciplinaryCase($employee_id, $_POST, $id)) {
+                        $response = ['success' => true, 'message' => 'Disciplinary case saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save disciplinary case';
+                    }
+                    break;
+
+                case 'save_performance':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $id = $_POST['performance_id'] ?? null;
+                    if ($employee_id && savePerformanceReview($employee_id, $_POST, $id)) {
+                        $response = ['success' => true, 'message' => 'Performance review saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save performance review';
+                    }
+                    break;
+
+                case 'save_education':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $education_id = $_POST['education_id'] ?? null;
+                    $education_data = $_POST;
+
+                    // Handle diploma file upload for education
                     if (isset($_FILES['diploma_file']) && $_FILES['diploma_file']['error'] === UPLOAD_ERR_OK) {
-                        $upload_result = handleFileUpload($_FILES['diploma_file'], $employee_id, 'diploma');
+                        $upload_result = handleFileUpload($_FILES['diploma_file'], $employee_id, 'education_diploma');
                         if ($upload_result['success']) {
-                            $pdo = getDB();
-                            $stmt = $pdo->prepare("UPDATE employees SET diploma_file = ? WHERE id = ?");
-                            $stmt->execute([$upload_result['filename'], $employee_id]);
+                            $education_data['diploma_file'] = $upload_result['filename'];
                         }
                     }
-                    $response = ['success' => true, 'message' => 'Profile updated successfully'];
-                } else {
-                    $response['message'] = 'Failed to update profile';
-                }
-                break;
 
-            case 'save_contact':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $contact_id = $_POST['contact_id'] ?? null;
-                if ($employee_id && saveEmergencyContact($employee_id, $_POST, $contact_id)) {
-                    $response = ['success' => true, 'message' => 'Contact saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save contact';
-                }
-                break;
-
-            case 'save_education':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $education_id = $_POST['education_id'] ?? null;
-                $education_data = $_POST;
-
-                // Handle diploma file upload for education
-                if (isset($_FILES['diploma_file']) && $_FILES['diploma_file']['error'] === UPLOAD_ERR_OK) {
-                    $upload_result = handleFileUpload($_FILES['diploma_file'], $employee_id, 'education_diploma');
-                    if ($upload_result['success']) {
-                        $education_data['diploma_file'] = $upload_result['filename'];
-                    }
-                }
-
-                if ($employee_id && saveEducationalBackground($employee_id, $education_data, $education_id)) {
-                    $response = ['success' => true, 'message' => 'Educational background saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save educational background';
-                }
-                break;
-
-            case 'save_seminar':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $seminar_id = $_POST['seminar_id'] ?? null;
-                $seminar_data = $_POST;
-
-                // Handle certificate upload
-                if (isset($_FILES['certificate']) && $_FILES['certificate']['error'] === UPLOAD_ERR_OK) {
-                    $upload_result = handleFileUpload($_FILES['certificate'], $employee_id, 'certificate');
-                    if ($upload_result['success']) {
-                        $seminar_data['certificate'] = $upload_result['filename'];
-                    }
-                }
-
-                if ($employee_id && saveSeminar($employee_id, $seminar_data, $seminar_id)) {
-                    $response = ['success' => true, 'message' => 'Seminar saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save seminar';
-                }
-                break;
-
-            case 'save_skill':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $skill_id = $_POST['skill_id'] ?? null;
-                $skill_data = $_POST;
-
-                // Handle certification upload
-                if (isset($_FILES['certification']) && $_FILES['certification']['error'] === UPLOAD_ERR_OK) {
-                    $upload_result = handleFileUpload($_FILES['certification'], $employee_id, 'certification');
-                    if ($upload_result['success']) {
-                        $skill_data['certification'] = $upload_result['filename'];
-                    }
-                }
-
-                if ($employee_id && saveSkill($employee_id, $skill_data, $skill_id)) {
-                    $response = ['success' => true, 'message' => 'Skill saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save skill';
-                }
-                break;
-
-            case 'save_work_experience':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $work_id = $_POST['work_id'] ?? null;
-                if ($employee_id && saveWorkExperience($employee_id, $_POST, $work_id)) {
-                    $response = ['success' => true, 'message' => 'Work experience saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save work experience';
-                }
-                break;
-
-            case 'save_dependent':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $id = $_POST['dependent_id'] ?? null;
-                if ($employee_id && saveDependent($employee_id, $_POST, $id)) {
-                    $response = ['success' => true, 'message' => 'Dependent saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save dependent';
-                }
-                break;
-
-            case 'save_salary':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $id = $_POST['salary_id'] ?? null;
-                if ($employee_id && saveSalaryHistory($employee_id, $_POST, $id)) {
-                    $response = ['success' => true, 'message' => 'Salary history saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save salary history';
-                }
-                break;
-
-            case 'save_disciplinary':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $id = $_POST['disciplinary_id'] ?? null;
-                if ($employee_id && saveDisciplinaryCase($employee_id, $_POST, $id)) {
-                    $response = ['success' => true, 'message' => 'Disciplinary case saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save disciplinary case';
-                }
-                break;
-
-            case 'save_performance':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $id = $_POST['performance_id'] ?? null;
-                if ($employee_id && savePerformanceReview($employee_id, $_POST, $id)) {
-                    $response = ['success' => true, 'message' => 'Performance review saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save performance review';
-                }
-                break;
-
-            case 'delete_contact':
-                $contact_id = $_POST['contact_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($contact_id) && !empty($employee_id) && deleteEmergencyContact($contact_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Contact deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete contact';
-                }
-                break;
-
-            case 'delete_education':
-                $education_id = $_POST['education_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($education_id) && !empty($employee_id) && deleteEducationalBackground($education_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Educational background deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete educational background';
-                }
-                break;
-
-            case 'delete_seminar':
-                $seminar_id = $_POST['seminar_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($seminar_id) && !empty($employee_id) && deleteSeminar($seminar_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Seminar deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete seminar';
-                }
-                break;
-
-            case 'delete_skill':
-                $skill_id = $_POST['skill_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($skill_id) && !empty($employee_id) && deleteSkill($skill_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Skill deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete skill';
-                }
-                break;
-
-            case 'delete_work_experience':
-                $work_id = $_POST['work_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($work_id) && !empty($employee_id) && deleteWorkExperience($work_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Work experience deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete work experience';
-                }
-                break;
-
-            case 'delete_dependent':
-                $id = $_POST['dependent_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($id) && !empty($employee_id) && deleteDependent($id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Dependent deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete dependent';
-                }
-                break;
-
-             case 'delete_salary':
-                $id = $_POST['salary_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($id) && !empty($employee_id) && deleteSalaryHistory($id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Salary history deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete salary history';
-                }
-                break;
-
-             case 'delete_disciplinary':
-                $id = $_POST['disciplinary_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($id) && !empty($employee_id) && deleteDisciplinaryCase($id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Disciplinary case deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete disciplinary case';
-                }
-                break;
-
-             case 'delete_performance':
-                $id = $_POST['performance_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($id) && !empty($employee_id) && deletePerformanceReview($id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Performance review deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete performance review';
-                }
-                break;
-
-            case 'get_employee_details':
-                $employee_id = $_POST['employee_id'] ?? '';
-                if ($employee_id) {
-                    $emp = getEmployee($employee_id);
-                    if ($emp) {
-                        $response = [
-                            'success' => true,
-                            'employee' => $emp,
-                            'contacts' => getEmergencyContacts($employee_id),
-                            'education' => getEducationalBackground($employee_id),
-                            'seminars' => getSeminars($employee_id),
-                            'skills' => getSkills($employee_id),
-                            'work' => getWorkExperience($employee_id),
-                            'documents' => getEmployeeDocuments($employee_id),
-                            'dependents' => getDependents($employee_id),
-                            'salary_history' => getSalaryHistory($employee_id),
-                            'disciplinary' => getDisciplinaryCases($employee_id),
-                            'subordinates' => [], // Placeholder for now
-                            'performance' => getPerformanceReviews($employee_id)
-                        ];
+                    if ($employee_id && saveEducationalBackground($employee_id, $education_data, $education_id)) {
+                        $response = ['success' => true, 'message' => 'Educational background saved successfully'];
                     } else {
-                        $response['message'] = 'Employee not found';
+                        $response['message'] = 'Failed to save educational background';
                     }
-                } else {
-                    $response['message'] = 'Invalid ID';
-                }
-                break;
+                    break;
 
-            case 'save_document':
-                $employee_id = $_POST['employee_id'] ?? '';
-                $doc_id = $_POST['document_id'] ?? null;
-                $doc_data = $_POST;
+                case 'save_seminar':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $seminar_id = $_POST['seminar_id'] ?? null;
+                    $seminar_data = $_POST;
 
-                // Handle document upload
-                if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
-                    $upload_result = handleFileUpload($_FILES['document_file'], $employee_id, 'document');
-                    if ($upload_result['success']) {
-                        $doc_data['file_path'] = $upload_result['filename'];
+                    // Handle certificate upload
+                    if (isset($_FILES['certificate']) && $_FILES['certificate']['error'] === UPLOAD_ERR_OK) {
+                        $upload_result = handleFileUpload($_FILES['certificate'], $employee_id, 'certificate');
+                        if ($upload_result['success']) {
+                            $seminar_data['certificate'] = $upload_result['filename'];
+                        }
+                    }
+
+                    if ($employee_id && saveSeminar($employee_id, $seminar_data, $seminar_id)) {
+                        $response = ['success' => true, 'message' => 'Seminar saved successfully'];
                     } else {
-                        throw new Exception($upload_result['message']);
+                        $response['message'] = 'Failed to save seminar';
                     }
-                } else if (!$doc_id) {
-                     throw new Exception('File is required for new documents');
-                }
+                    break;
 
-                if ($employee_id && saveEmployeeDocument($employee_id, $doc_data, $doc_id)) {
-                    $response = ['success' => true, 'message' => 'Document saved successfully'];
-                } else {
-                    $response['message'] = 'Failed to save document';
-                }
-                break;
+                case 'save_skill':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $skill_id = $_POST['skill_id'] ?? null;
+                    $skill_data = $_POST;
 
-            case 'delete_document':
-                $doc_id = $_POST['document_id'] ?? '';
-                $employee_id = $_POST['employee_id'] ?? '';
-                if (!empty($doc_id) && !empty($employee_id) && deleteEmployeeDocument($doc_id, $employee_id)) {
-                    $response = ['success' => true, 'message' => 'Document deleted successfully'];
-                } else {
-                    $response['message'] = 'Failed to delete document';
-                }
-                break;
+                    // Handle certification upload
+                    if (isset($_FILES['certification']) && $_FILES['certification']['error'] === UPLOAD_ERR_OK) {
+                        $upload_result = handleFileUpload($_FILES['certification'], $employee_id, 'certification');
+                        if ($upload_result['success']) {
+                            $skill_data['certification'] = $upload_result['filename'];
+                        }
+                    }
 
-            case 'import_hr1_employees':
-                $raw_data = $_POST['employees'] ?? '[]';
-                $employees_to_import = json_decode($raw_data, true);
-                $imported_count = 0;
-                $skipped_count = 0;
-                
-                if (json_last_error() === JSON_ERROR_NONE && is_array($employees_to_import)) {
-                    $pdo = getDB();
-                    $pdo->beginTransaction();
-                    
+                    if ($employee_id && saveSkill($employee_id, $skill_data, $skill_id)) {
+                        $response = ['success' => true, 'message' => 'Skill saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save skill';
+                    }
+                    break;
+
+                case 'save_work_experience':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $work_id = $_POST['work_id'] ?? null;
+                    if ($employee_id && saveWorkExperience($employee_id, $_POST, $work_id)) {
+                        $response = ['success' => true, 'message' => 'Work experience saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save work experience';
+                    }
+                    break;
+
+                case 'save_document':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    $doc_id = $_POST['document_id'] ?? null;
+                    $doc_data = $_POST;
+
+                    // Handle document upload
+                    if (isset($_FILES['document_file']) && $_FILES['document_file']['error'] === UPLOAD_ERR_OK) {
+                        $upload_result = handleFileUpload($_FILES['document_file'], $employee_id, 'document');
+                        if ($upload_result['success']) {
+                            $doc_data['file_path'] = $upload_result['filename'];
+                        } else {
+                            throw new Exception($upload_result['message']);
+                        }
+                    } else if (!$doc_id) {
+                        throw new Exception('File is required for new documents');
+                    }
+
+                    if ($employee_id && saveEmployeeDocument($employee_id, $doc_data, $doc_id)) {
+                        $response = ['success' => true, 'message' => 'Document saved successfully'];
+                    } else {
+                        $response['message'] = 'Failed to save document';
+                    }
+                    break;
+
+                case 'get_employee_details':
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if ($employee_id) {
+                        $emp = getEmployee($employee_id);
+                        if ($emp) {
+                            $response = [
+                                'success' => true,
+                                'employee' => $emp,
+                                'contacts' => getEmergencyContacts($employee_id),
+                                'education' => getEducationalBackground($employee_id),
+                                'seminars' => getSeminars($employee_id),
+                                'skills' => getSkills($employee_id),
+                                'work' => getWorkExperience($employee_id),
+                                'documents' => getEmployeeDocuments($employee_id),
+                                'dependents' => getDependents($employee_id),
+                                'salary_history' => getSalaryHistory($employee_id),
+                                'disciplinary' => getDisciplinaryCases($employee_id),
+                                'subordinates' => [],
+                                'performance' => getPerformanceReviews($employee_id)
+                            ];
+                        } else {
+                            $response['message'] = 'Employee not found';
+                        }
+                    } else {
+                        $response['message'] = 'Invalid ID';
+                    }
+                    break;
+
+                case 'delete_contact':
+                    $contact_id = $_POST['contact_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($contact_id) && !empty($employee_id) && deleteEmergencyContact($contact_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Contact deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete contact';
+                    }
+                    break;
+
+                case 'delete_education':
+                    $education_id = $_POST['education_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($education_id) && !empty($employee_id) && deleteEducationalBackground($education_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Educational background deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete educational background';
+                    }
+                    break;
+
+                case 'delete_seminar':
+                    $seminar_id = $_POST['seminar_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($seminar_id) && !empty($employee_id) && deleteSeminar($seminar_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Seminar deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete seminar';
+                    }
+                    break;
+
+                case 'delete_skill':
+                    $skill_id = $_POST['skill_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($skill_id) && !empty($employee_id) && deleteSkill($skill_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Skill deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete skill';
+                    }
+                    break;
+
+                case 'delete_work_experience':
+                    $work_id = $_POST['work_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($work_id) && !empty($employee_id) && deleteWorkExperience($work_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Work experience deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete work experience';
+                    }
+                    break;
+
+                case 'delete_dependent':
+                    $id = $_POST['dependent_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($id) && !empty($employee_id) && deleteDependent($id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Dependent deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete dependent';
+                    }
+                    break;
+
+                case 'delete_salary':
+                    $id = $_POST['salary_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($id) && !empty($employee_id) && deleteSalaryHistory($id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Salary history deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete salary history';
+                    }
+                    break;
+
+                case 'delete_disciplinary':
+                    $id = $_POST['disciplinary_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($id) && !empty($employee_id) && deleteDisciplinaryCase($id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Disciplinary case deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete disciplinary case';
+                    }
+                    break;
+
+                case 'delete_performance':
+                    $id = $_POST['performance_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($id) && !empty($employee_id) && deletePerformanceReview($id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Performance review deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete performance review';
+                    }
+                    break;
+
+                case 'delete_document':
+                    $doc_id = $_POST['document_id'] ?? '';
+                    $employee_id = $_POST['employee_id'] ?? '';
+                    if (!empty($doc_id) && !empty($employee_id) && deleteEmployeeDocument($doc_id, $employee_id)) {
+                        $response = ['success' => true, 'message' => 'Document deleted successfully'];
+                    } else {
+                        $response['message'] = 'Failed to delete document';
+                    }
+                    break;
+
+                case 'preview_duplicates':
                     try {
-                        $stmtCheck = $pdo->prepare("SELECT id FROM employees WHERE email = ?");
-                        
-                        $common_fields = "`name`=?, `job_title`=?, `department`=?, `salary`=?, `date_hired`=?, `hire_date`=?, 
-                                          `phone`=?, `birth_date`=?, `age`=?, `birth_place`=?, `gender`=?, `civil_status`=?, 
-                                          `nationality`=?, `address`=?, `sss_no`=?, `philhealth_no`=?, `pagibig_no`=?, `tin_no`=?,
-                                          `status`=?, `contract`=?, `work_schedule`=?, `bank_name`=?, `bank_account_no`=?, 
-                                          `hmo_provider`=?, `hmo_number`=?, `leave_credits_vacation`=?, `leave_credits_sick`=?, `manager`=?";
-                                          
-                        $stmtUpdate = $pdo->prepare("UPDATE employees SET $common_fields WHERE email = ?");
-                        
-                        $stmtInsert = $pdo->prepare("INSERT INTO employees (`name`, `job_title`, `department`, `salary`, `date_hired`, `hire_date`, `phone`, `birth_date`, `age`, `birth_place`, `gender`, `civil_status`, `nationality`, `address`, `sss_no`, `philhealth_no`, `pagibig_no`, `tin_no`, `status`, `contract`, `work_schedule`, `bank_name`, `bank_account_no`, `hmo_provider`, `hmo_number`, `leave_credits_vacation`, `leave_credits_sick`, `manager`, `employee_id`, `email`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        
-                        foreach ($employees_to_import as $emp) {
-                            $email = $emp['email'] ?? '';
-                            if (empty($email)) continue;
-                            
-                            $name = trim(($emp['first_name'] ?? '') . ' ' . ($emp['last_name'] ?? ''));
-                            $job_title = $emp['position'] ?? '';
-                            $dept = $emp['department'] ?? '';
-                            $hr1_id = $emp['id'] ?? rand(1000,9999);
-                            $emp_id = 'IMP-' . str_pad($hr1_id, 4, '0', STR_PAD_LEFT);
-                            $salary = $emp['salary'] ?? $emp['basic_pay'] ?? 0;
-                            $date_hired = $emp['hire_date'] ?? $emp['date_hired'] ?? null;
-                            
-                            $phone = $emp['contact_number'] ?? null;
-                            $birth_date = $emp['date_of_birth'] ?? null;
-                            $birth_place = $emp['place_of_birth'] ?? null;
-                            $gender = $emp['gender'] ?? null;
-                            $civil_status = $emp['civil_status'] ?? null;
-                            $nationality = $emp['nationality'] ?? null;
-                            $address = $emp['home_address'] ?? null;
-                            $sss_no = $emp['sss_number'] ?? null;
-                            $philhealth_no = $emp['philhealth_number'] ?? null;
-                            $pagibig_no = $emp['pagibig_number'] ?? null;
-                            $tin_no = $emp['tin_number'] ?? null;
-                            $status = $emp['status'] ?? $emp['employment_status'] ?? 'Active';
-                            $contract = $emp['employment_contract_type'] ?? null;
-                            $work_schedule = $emp['work_schedule'] ?? null;
-                            $bank_name = $emp['bank_name'] ?? null;
-                            $bank_account_no = $emp['bank_account_number'] ?? null;
-                            $hmo_provider = $emp['hmo_provider'] ?? null;
-                            $hmo_number = $emp['hmo_number'] ?? null;
-                            $leave_credits_vacation = $emp['leave_credits_vacation'] ?? 0;
-                            $leave_credits_sick = $emp['leave_credits_sick'] ?? 0;
-                            $manager = $emp['supervisor'] ?? null;
-                            
-                            // Calculate age from birth_date
-                            $age = null;
-                            if ($birth_date) {
+                        $pdo = getDB();
+                        // Find duplicates by exact email match
+                        $stmt = $pdo->query("
+                            SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
+                                   e.date_hired, e.status
+                            FROM employees e
+                            INNER JOIN (
+                                SELECT LOWER(TRIM(email)) AS norm_email
+                                FROM employees
+                                WHERE email IS NOT NULL AND TRIM(email) != ''
+                                GROUP BY LOWER(TRIM(email))
+                                HAVING COUNT(*) > 1
+                            ) dup ON LOWER(TRIM(e.email)) = dup.norm_email
+                            ORDER BY LOWER(TRIM(e.email)), e.id ASC
+                        ");
+                        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+                        // Also find duplicates by exact name match (where email is null/empty)
+                        $stmt2 = $pdo->query("
+                            SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
+                                   e.date_hired, e.status
+                            FROM employees e
+                            INNER JOIN (
+                                SELECT LOWER(TRIM(name)) AS norm_name
+                                FROM employees
+                                WHERE (email IS NULL OR TRIM(email) = '')
+                                GROUP BY LOWER(TRIM(name))
+                                HAVING COUNT(*) > 1
+                            ) dup ON LOWER(TRIM(e.name)) = dup.norm_name
+                            WHERE (e.email IS NULL OR TRIM(e.email) = '')
+                            ORDER BY LOWER(TRIM(e.name)), e.id ASC
+                        ");
+                        $rows2 = $stmt2->fetchAll(PDO::FETCH_ASSOC);
+
+                        $all_rows = array_merge($rows, $rows2);
+
+                        // Group duplicates
+                        $groups = [];
+                        foreach ($all_rows as $r) {
+                            $key = !empty($r['email']) ? 'email_' . strtolower(trim($r['email'])) : 'name_' . strtolower(trim($r['name']));
+                            $groups[$key][] = $r;
+                        }
+
+                        $response = ['success' => true, 'groups' => array_values($groups), 'total' => count($all_rows)];
+                    } catch (Exception $e) {
+                        $response['message'] = 'Error scanning duplicates: ' . $e->getMessage();
+                    }
+                    break;
+
+                case 'delete_duplicates':
+                    $ids_to_delete = json_decode($_POST['ids'] ?? '[]', true);
+                    if (!is_array($ids_to_delete) || empty($ids_to_delete)) {
+                        $response['message'] = 'No employee IDs provided for deletion.';
+                        break;
+                    }
+                    // Sanitize to integers
+                    $ids_to_delete = array_map('intval', $ids_to_delete);
+                    $ids_to_delete = array_filter($ids_to_delete, function($id) { return $id > 0; });
+
+                    try {
+                        $pdo = getDB();
+                        $pdo->beginTransaction();
+                        $deleted = 0;
+                        $tables = [
+                            'emergency_contacts', 'educational_background', 'family_dependents',
+                            'seminars', 'work_experience', 'disciplinary_cases',
+                            'performance_reviews', 'salary_history', 'employee_documents', 'skills'
+                        ];
+                        foreach ($ids_to_delete as $del_id) {
+                            foreach ($tables as $tbl) {
                                 try {
-                                    $dob = new DateTime($birth_date);
-                                    $now = new DateTime();
-                                    $age = $now->diff($dob)->y;
-                                } catch (Exception $e) {
-                                    $age = null;
+                                    $pdo->prepare("DELETE FROM `$tbl` WHERE employee_id = ?")->execute([$del_id]);
+                                } catch (Exception $te) { 
+                                    // Table may not exist, skip
                                 }
                             }
-                            
-                            $stmtCheck->execute([$email]);
-                            $row = $stmtCheck->fetch();
-                            
-                            $db_employee_id = null;
-                            
-                            if ($row) {
-                                $db_employee_id = $row['id'];
-                                $stmtUpdate->execute([$name, $job_title, $dept, $salary, $date_hired, $date_hired, $phone, $birth_date, $age, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $email]);
-                                $skipped_count++;
-                            } else {
-                                $stmtInsert->execute([$name, $job_title, $dept, $salary, $date_hired, $date_hired, $phone, $birth_date, $age, $birth_place, $gender, $civil_status, $nationality, $address, $sss_no, $philhealth_no, $pagibig_no, $tin_no, $status, $contract, $work_schedule, $bank_name, $bank_account_no, $hmo_provider, $hmo_number, $leave_credits_vacation, $leave_credits_sick, $manager, $emp_id, $email]);
-                                $db_employee_id = $pdo->lastInsertId();
-                                $imported_count++;
-                            }
-                            
-                            if ($db_employee_id) {
-                                $pdo->prepare("DELETE FROM emergency_contacts WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM educational_background WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM family_dependents WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM seminars WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM work_experience WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM disciplinary_cases WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM performance_reviews WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM salary_history WHERE employee_id = ?")->execute([$db_employee_id]);
-                                $pdo->prepare("DELETE FROM employee_documents WHERE employee_id = ?")->execute([$db_employee_id]);
-
-                                if (!empty($emp['emergency_contact_person']) || !empty($emp['emergency_contact_number'])) {
-                                    $pdo->prepare("INSERT INTO emergency_contacts (employee_id, contact_name, relationship, phone, is_primary) VALUES (?, ?, 'Primary', ?, 1)")
-                                        ->execute([$db_employee_id, $emp['emergency_contact_person'], $emp['emergency_contact_number']]);
-                                }
-
-                                if (!empty($emp['education']) && is_array($emp['education'])) {
-                                    $stmtEdu = $pdo->prepare("INSERT INTO educational_background (employee_id, level, school_name, course, year_graduated) VALUES (?, ?, ?, ?, ?)");
-                                    foreach ($emp['education'] as $edu) {
-                                        $stmtEdu->execute([$db_employee_id, $edu['level'] ?? 'College', $edu['school_name'] ?? '', $edu['degree'] ?? '', $edu['year_graduated'] ?? null]);
-                                    }
-                                }
-                                
-                                if (!empty($emp['dependents']) && is_array($emp['dependents'])) {
-                                    $stmtDep = $pdo->prepare("INSERT INTO family_dependents (employee_id, name, relationship, birth_date) VALUES (?, ?, ?, ?)");
-                                    foreach ($emp['dependents'] as $dep) {
-                                        $stmtDep->execute([$db_employee_id, $dep['name'] ?? '', $dep['relationship'] ?? '', $dep['date_of_birth'] ?? null]);
-                                    }
-                                }
-                                
-                                if (!empty($emp['training']) && is_array($emp['training'])) {
-                                    $stmtTrn = $pdo->prepare("INSERT INTO seminars (employee_id, seminar_name, organizer, date_from, date_to) VALUES (?, ?, ?, ?, ?)");
-                                    foreach ($emp['training'] as $trn) {
-                                        $date_c = $trn['date_completed'] ?? date('Y-m-d');
-                                        $stmtTrn->execute([$db_employee_id, $trn['training_name'] ?? '', $trn['provider'] ?? '', $date_c, $date_c]);
-                                    }
-                                }
-
-                                if (!empty($emp['history']) && is_array($emp['history'])) {
-                                    $stmtExp = $pdo->prepare("INSERT INTO work_experience (employee_id, company_name, position, date_from, date_to, is_current) VALUES (?, ?, ?, ?, ?, 0)");
-                                    foreach ($emp['history'] as $hist) {
-                                        $stmtExp->execute([$db_employee_id, $hist['company_name'] ?? '', $hist['position'] ?? '', $hist['start_date'] ?? date('Y-m-d'), $hist['end_date'] ?? null]);
-                                    }
-                                }
-
-                                if (!empty($emp['performance']) && is_array($emp['performance'])) {
-                                    $stmtPerf = $pdo->prepare("INSERT INTO performance_reviews (employee_id, review_date, rating, evaluator, comments) VALUES (?, ?, ?, 'System', ?)");
-                                    foreach ($emp['performance'] as $perf) {
-                                        $stmtPerf->execute([$db_employee_id, $perf['review_date'] ?? date('Y-m-d'), $perf['rating'] ?? '', $perf['comments'] ?? '']);
-                                    }
-                                }
-
-                                if (!empty($emp['disciplinary']) && is_array($emp['disciplinary'])) {
-                                    $stmtDisc = $pdo->prepare("INSERT INTO disciplinary_cases (employee_id, violation, action_taken, status, date_reported) VALUES (?, ?, ?, ?, ?)");
-                                    foreach ($emp['disciplinary'] as $disc) {
-                                        $stmtDisc->execute([$db_employee_id, $disc['violation'] ?? '', $disc['action_taken'] ?? '', $disc['status'] ?? 'Open', $disc['incident_date'] ?? date('Y-m-d')]);
-                                    }
-                                }
-                                
-                                if (!empty($emp['compensation']) && is_array($emp['compensation'])) {
-                                    $stmtSal = $pdo->prepare("INSERT INTO salary_history (employee_id, amount, effective_date, type) VALUES (?, ?, ?, ?)");
-                                    foreach ($emp['compensation'] as $sal) {
-                                        $stmtSal->execute([$db_employee_id, $sal['amount'] ?? 0, $sal['effective_date'] ?? date('Y-m-d'), $sal['type'] ?? 'Adjustment']);
-                                    }
-                                }
-
-                                if (!empty($emp['files']) && is_array($emp['files'])) {
-                                    $stmtDoc = $pdo->prepare("INSERT INTO employee_documents (employee_id, document_name, document_type, file_path) VALUES (?, ?, 'Other', ?)");
-                                    foreach ($emp['files'] as $file) {
-                                        $p = $file['file_path'] ?? $file['url'] ?? '';
-                                        $n = $file['file_name'] ?? $file['name'] ?? 'Document';
-                                        if(!empty($p)){
-                                            $stmtDoc->execute([$db_employee_id, $n, $p]);
-                                        }
-                                    }
-                                }
-                            }
+                            $stmt = $pdo->prepare('DELETE FROM employees WHERE id = ?');
+                            $stmt->execute([$del_id]);
+                            $deleted += $stmt->rowCount();
                         }
                         $pdo->commit();
-                        $response = ['success' => true, 'message' => "Import complete. Imported: $imported_count, Updated: $skipped_count"];
-                    } catch (Exception $ex) {
+                        $response = ['success' => true, 'message' => "Successfully deleted $deleted duplicate employee record(s).", 'deleted' => $deleted];
+                    } catch (Exception $e) {
                         $pdo->rollBack();
-                        throw $ex;
+                        $response['message'] = 'Error deleting duplicates: ' . $e->getMessage();
                     }
-                } else {
-                    $response['message'] = 'Invalid employee data format';
-                }
-                break;
-
-            case 'preview_duplicates':
-                try {
-                    $pdo = getDB();
-                    // Find duplicates by exact email match (keeping the one with the lowest id)
-                    $stmt = $pdo->query("
-                        SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
-                               e.date_hired, e.status
-                        FROM employees e
-                        INNER JOIN (
-                            SELECT LOWER(TRIM(email)) AS norm_email
-                            FROM employees
-                            WHERE email IS NOT NULL AND TRIM(email) != ''
-                            GROUP BY LOWER(TRIM(email))
-                            HAVING COUNT(*) > 1
-                        ) dup ON LOWER(TRIM(e.email)) = dup.norm_email
-                        ORDER BY LOWER(TRIM(e.email)), e.id ASC
-                    ");
-                    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-                    // Also find duplicates by exact name match (where email is null/empty)
-                    $stmt2 = $pdo->query("
-                        SELECT e.id, e.name, e.email, e.employee_id, e.department, e.job_title,
-                               e.date_hired, e.status
-                        FROM employees e
-                        INNER JOIN (
-                            SELECT LOWER(TRIM(name)) AS norm_name
-                            FROM employees
-                            WHERE (email IS NULL OR TRIM(email) = '')
-                            GROUP BY LOWER(TRIM(name))
-                            HAVING COUNT(*) > 1
-                        ) dup ON LOWER(TRIM(e.name)) = dup.norm_name
-                        WHERE (e.email IS NULL OR TRIM(e.email) = '')
-                        ORDER BY LOWER(TRIM(e.name)), e.id ASC
-                    ");
-                    $rows2 = $stmt2->fetchAll(PDO::FETCH_ASSOC);
-
-                    $all_rows = array_merge($rows, $rows2);
-
-                    // Group duplicates
-                    $groups = [];
-                    foreach ($all_rows as $r) {
-                        $key = !empty($r['email']) ? 'email_' . strtolower(trim($r['email'])) : 'name_' . strtolower(trim($r['name']));
-                        $groups[$key][] = $r;
-                    }
-
-                    $response = ['success' => true, 'groups' => array_values($groups), 'total' => count($all_rows)];
-                } catch (Exception $e) {
-                    $response['message'] = 'Error scanning duplicates: ' . $e->getMessage();
-                }
-                break;
-
-            case 'delete_duplicates':
-                $ids_to_delete = json_decode($_POST['ids'] ?? '[]', true);
-                if (!is_array($ids_to_delete) || empty($ids_to_delete)) {
-                    $response['message'] = 'No employee IDs provided for deletion.';
                     break;
-                }
-                // Sanitize to integers
-                $ids_to_delete = array_map('intval', $ids_to_delete);
-                $ids_to_delete = array_filter($ids_to_delete, fn($id) => $id > 0);
 
-                try {
-                    $pdo = getDB();
-                    $pdo->beginTransaction();
-                    $deleted = 0;
-                    $tables = [
-                        'emergency_contacts', 'educational_background', 'family_dependents',
-                        'seminars', 'work_experience', 'disciplinary_cases',
-                        'performance_reviews', 'salary_history', 'employee_documents', 'skills'
-                    ];
-                    foreach ($ids_to_delete as $del_id) {
-                        foreach ($tables as $tbl) {
-                            try {
-                                $pdo->prepare("DELETE FROM `$tbl` WHERE employee_id = ?")->execute([$del_id]);
-                            } catch (Exception $te) { /* table may not exist, skip */ }
-                        }
-                        $stmt = $pdo->prepare('DELETE FROM employees WHERE id = ?');
-                        $stmt->execute([$del_id]);
-                        $deleted += $stmt->rowCount();
-                    }
-                    $pdo->commit();
-                    $response = ['success' => true, 'message' => "Successfully deleted $deleted duplicate employee record(s).", 'deleted' => $deleted];
-                } catch (Exception $e) {
-                    $pdo->rollBack();
-                    $response['message'] = 'Error deleting duplicates: ' . $e->getMessage();
-                }
-                break;
+                default:
+                    $response['message'] = 'Invalid action';
+                    break;
+            }
+        } catch (Exception $e) {
+            error_log("Form submission error: " . $e->getMessage());
+            $response['message'] = 'An error occurred: ' . $e->getMessage();
+        }
 
-            default:
-                $response['message'] = 'Invalid action';
-                break;
+        // Always return JSON for AJAX requests
+        ob_clean();
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
+    }
+
+    // Include sidebar and responsive files (View Logic)
+    $sidebar_path = '../includes/sidebar.php';
+    $responsive_path = '../responsive/responsive.php';
+    
+    if (file_exists($sidebar_path)) {
+        include $sidebar_path;
+    } else {
+        error_log("Sidebar file not found: $sidebar_path");
+    }
+    
+    if (file_exists($responsive_path)) {
+        include $responsive_path;
+    } else {
+        error_log("Responsive file not found: $responsive_path");
+    }
+
+    // Get departments for filter
+    $pdo = getDB();
+    $depts = [];
+    try {
+        $depts_result = $pdo->query("SELECT DISTINCT department FROM employees WHERE department IS NOT NULL AND department != '' ORDER BY department");
+        while ($row = $depts_result->fetch()) {
+            $depts[] = $row['department'];
         }
     } catch (Exception $e) {
-        error_log("Form submission error: " . $e->getMessage());
-        $response['message'] = 'An error occurred: ' . $e->getMessage();
+        error_log("Error getting departments: " . $e->getMessage());
     }
 
-    // Always return JSON for AJAX requests
-    ob_clean(); // Clean any previous output (HTML errors, warnings, etc.)
-    header('Content-Type: application/json');
-    echo json_encode($response);
+    // Handle Filters
+    $department_filter = $_GET['department'] ?? '';
+    $status_filter = $_GET['status'] ?? '';
+    $search_query = $_GET['search'] ?? '';
+    $employees = getEmployees($department_filter, $status_filter, $search_query);
+
+    // Get specific employee for editing
+    $edit_employee = null;
+    $emergency_contacts = [];
+    $educational_background = [];
+    $seminars = [];
+    $skills = [];
+    $work_experience = [];
+    $documents = [];
+    $dependents = [];
+    $salary_history = [];
+    $disciplinary = [];
+    $performance = [];
+    
+    if (isset($_GET['edit'])) {
+        $edit_employee = getEmployee($_GET['edit']);
+        if ($edit_employee) {
+            $emergency_contacts = getEmergencyContacts($_GET['edit']);
+            $educational_background = getEducationalBackground($_GET['edit']);
+            $seminars = getSeminars($_GET['edit']);
+            $skills = getSkills($_GET['edit']);
+            $work_experience = getWorkExperience($_GET['edit']);
+            $documents = getEmployeeDocuments($_GET['edit']);
+            $dependents = getDependents($_GET['edit']);
+            $salary_history = getSalaryHistory($_GET['edit']);
+            $disciplinary = getDisciplinaryCases($_GET['edit']);
+            $performance = getPerformanceReviews($_GET['edit']);
+        }
+    }
+
+} catch (Exception $e) {
+    // Catch any fatal errors and display them
+    error_log("Fatal error: " . $e->getMessage());
+    ob_clean();
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>System Error</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    </head>
+    <body>
+        <div class="container mt-5">
+            <div class="alert alert-danger">
+                <h4><i class="fas fa-exclamation-triangle"></i> System Error</h4>
+                <p><?php echo htmlspecialchars($e->getMessage()); ?></p>
+                <hr>
+                <p class="mb-0"><small>Please check the error log for more details.</small></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    <?php
     exit;
 }
-
-// Include sidebar and responsive files (View Logic)
-include '../includes/sidebar.php';
-include '../responsive/responsive.php';
-
-// Get departments for filter
-$pdo = getDB();
-$depts_result = $pdo->query("SELECT DISTINCT department FROM employees ORDER BY department");
-$depts = [];
-while ($row = $depts_result->fetch()) {
-    $depts[] = $row['department'];
-}
-
-// Handle Filters
-$department_filter = $_GET['department'] ?? '';
-$status_filter = $_GET['status'] ?? '';
-$search_query = $_GET['search'] ?? '';
-$employees = getEmployees($department_filter, $status_filter, $search_query);
-
-// Get specific employee for editing
-$edit_employee = null;
-$emergency_contacts = [];
-$educational_background = [];
-$seminars = [];
-$skills = [];
-$work_experience = [];
-if (isset($_GET['edit'])) {
-    $edit_employee = getEmployee($_GET['edit']);
-    if ($edit_employee) {
-        $emergency_contacts = getEmergencyContacts($_GET['edit']);
-        $educational_background = getEducationalBackground($_GET['edit']);
-        $seminars = getSeminars($_GET['edit']);
-        $skills = getSkills($_GET['edit']);
-        $work_experience = getWorkExperience($_GET['edit']);
-        $documents = getEmployeeDocuments($_GET['edit']);
-        $dependents = getDependents($_GET['edit']);
-        $salary_history = getSalaryHistory($_GET['edit']);
-        $disciplinary = getDisciplinaryCases($_GET['edit']);
-        $performance = getPerformanceReviews($_GET['edit']);
-    }
-}
 ?>
-<!DOCTYPE html>
-<html lang="en">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HR4 - Employee Profiles</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
+<style>
         :root {
             --primary: #2c3e50;
             --secondary: #3498db;
@@ -1855,44 +1860,38 @@ if (isset($_GET['edit'])) {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
+        
         /* MOBILE RESPONSIVE FIXES */
         @media (max-width: 768px) {
-            /* Fix Gemini Card Layout */
             [style*="columns: 2"] {
                 columns: 1 !important;
                 width: 100% !important;
             }
             
-            /* Fix Long Header Text Wrapping */
             .text-xs.font-weight-bold.text-uppercase {
                 white-space: normal !important;
                 line-height: 1.2 !important;
                 margin-bottom: 0.5rem !important;
             }
 
-            /* Adjust Container Margins */
             .container.mt-4 {
-                margin-top: 20px !important; /* Reduce gap */
+                margin-top: 20px !important;
                 padding-left: 10px !important;
                 padding-right: 10px !important;
             }
 
-            /* Generic Navbar/Header Fixes */
             nav.navbar, header, .top-bar {
                 flex-wrap: wrap !important;
                 height: auto !important;
                 padding: 10px !important;
             }
             
-            /* Stack header elements if they are flex */
             nav.navbar > div, header > div {
                 flex-wrap: wrap !important;
             }
         }
     </style>
-</head>
 
-<body>
     <!-- Navigation -->
     <?php if (function_exists('getNavbar')) echo getNavbar(); ?>
 
@@ -2200,8 +2199,6 @@ if (isset($_GET['edit'])) {
                     <div class="card-body">
                         <!-- Filters -->
                         <div class="filter-section mb-3">
-                        <!-- Filters & Search -->
-                        <div class="filter-section mb-3">
                             <form method="GET" class="row g-2 align-items-end">
                                 <div class="col-md-4">
                                     <div class="input-group">
@@ -2210,7 +2207,7 @@ if (isset($_GET['edit'])) {
                                         <button class="btn btn-outline-secondary" type="submit">Go</button>
                                     </div>
                                 </div>
-                                <div class="col-md-3"> <!-- Changed from col-md-3 to col-md-3 -->
+                                <div class="col-md-3">
                                     <select name="department" class="form-select" onchange="this.form.submit()">
                                         <option value="">All Departments</option>
                                         <?php
@@ -2221,7 +2218,7 @@ if (isset($_GET['edit'])) {
                                         ?>
                                     </select>
                                 </div>
-                                <div class="col-md-2"> <!-- Reduced width -->
+                                <div class="col-md-2">
                                     <select name="status" class="form-select" onchange="this.form.submit()">
                                         <option value="">All Statuses</option>
                                         <option value="Active" <?php echo $status_filter === 'Active' ? 'selected' : ''; ?>>Active</option>
@@ -2238,7 +2235,6 @@ if (isset($_GET['edit'])) {
                                 </div>
                             </form>
                         </div>
-                        </div>
 
                         <!-- Employee Table -->
                         <div class="table-responsive">
@@ -2254,47 +2250,56 @@ if (isset($_GET['edit'])) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <?php foreach ($employees as $employee): ?>
+                                        <?php if (empty($employees)): ?>
                                             <tr>
-                                                <td>
-                                                    <div class="d-flex align-items-center">
-                                                        <?php if (!empty($employee['photo']) && file_exists(UPLOAD_DIR . $employee['photo'])): ?>
-                                                            <img src="<?php echo UPLOAD_DIR . $employee['photo']; ?>" class="employee-photo me-3" alt="Photo">
-                                                        <?php else: ?>
-                                                            <div class="photo-placeholder me-3">
-                                                                <i class="fas fa-user text-muted fa-2x"></i>
-                                                            </div>
-                                                        <?php endif; ?>
-                                                        <div>
-                                                            <div class="fw-bold"><?php echo htmlspecialchars($employee['name']); ?></div>
-                                                            <small class="text-muted"><?php echo htmlspecialchars($employee['employee_id'] ?? 'EMP' . str_pad($employee['id'], 4, '0', STR_PAD_LEFT)); ?></small>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td><?php echo htmlspecialchars($employee['department']); ?></td>
-                                                <td><?php echo htmlspecialchars($employee['job_title']); ?></td>
-                                                <td>
-                                                    <?php
-                                                        $s = $employee['status'] ?? 'Active';
-                                                        $sBadge = $s === 'Active' ? 'bg-success' : ($s === 'Leave' ? 'bg-warning text-dark' : 'bg-secondary');
-                                                    ?>
-                                                    <span class="badge status-badge <?php echo $sBadge; ?>">
-                                                        <?php echo htmlspecialchars($s); ?>
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <button type="button" class="btn btn-sm btn-outline-dark me-1" onclick="analyzeProfile(<?php echo $employee['id']; ?>)">
-                                                        <i class="fas fa-brain"></i> Analyze
-                                                    </button>
-                                                    <button type="button" class="btn btn-sm btn-outline-info view-employee me-1" data-id="<?php echo $employee['id']; ?>">
-                                                        <i class="fas fa-eye"></i> View
-                                                    </button>
-                                                    <a href="?edit=<?php echo $employee['id']; ?>" class="btn btn-sm btn-outline-primary">
-                                                        <i class="fas fa-edit"></i> Edit
-                                                    </a>
+                                                <td colspan="5" class="text-center py-4">
+                                                    <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                                                    <p class="text-muted">No employees found</p>
                                                 </td>
                                             </tr>
-                                        <?php endforeach; ?>
+                                        <?php else: ?>
+                                            <?php foreach ($employees as $employee): ?>
+                                                <tr>
+                                                    <td>
+                                                        <div class="d-flex align-items-center">
+                                                            <?php if (!empty($employee['photo']) && file_exists(UPLOAD_DIR . $employee['photo'])): ?>
+                                                                <img src="<?php echo UPLOAD_DIR . $employee['photo']; ?>" class="employee-photo me-3" alt="Photo">
+                                                            <?php else: ?>
+                                                                <div class="photo-placeholder me-3">
+                                                                    <i class="fas fa-user text-muted fa-2x"></i>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                            <div>
+                                                                <div class="fw-bold"><?php echo htmlspecialchars($employee['name']); ?></div>
+                                                                <small class="text-muted"><?php echo htmlspecialchars($employee['employee_id'] ?? 'EMP' . str_pad($employee['id'], 4, '0', STR_PAD_LEFT)); ?></small>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td><?php echo htmlspecialchars($employee['department'] ?? ''); ?></td>
+                                                    <td><?php echo htmlspecialchars($employee['job_title'] ?? ''); ?></td>
+                                                    <td>
+                                                        <?php
+                                                            $s = $employee['status'] ?? 'Active';
+                                                            $sBadge = $s === 'Active' ? 'bg-success' : ($s === 'Leave' ? 'bg-warning text-dark' : 'bg-secondary');
+                                                        ?>
+                                                        <span class="badge status-badge <?php echo $sBadge; ?>">
+                                                            <?php echo htmlspecialchars($s); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <button type="button" class="btn btn-sm btn-outline-dark me-1" onclick="analyzeProfile(<?php echo $employee['id']; ?>)">
+                                                            <i class="fas fa-brain"></i> Analyze
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-info view-employee me-1" data-id="<?php echo $employee['id']; ?>">
+                                                            <i class="fas fa-eye"></i> View
+                                                        </button>
+                                                        <a href="?edit=<?php echo $employee['id']; ?>" class="btn btn-sm btn-outline-primary">
+                                                            <i class="fas fa-edit"></i> Edit
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
                                     </tbody>
                                 </table>
                             </div>
@@ -2362,13 +2367,13 @@ if (isset($_GET['edit'])) {
                 </div>
             </div>
 
-            <!-- Edit Profile Modal (Previously Sidebar) -->
+            <!-- Edit Profile Modal -->
             <?php if ($edit_employee): ?>
             <div class="modal fade" id="editEmployeeModal" tabindex="-1" data-bs-backdrop="static">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
                         <?php 
-                            $is_imported = (strpos($edit_employee['employee_id'] ?? '', 'IMP-') === 0);
+                            $is_imported = (isset($edit_employee['employee_id']) && strpos($edit_employee['employee_id'], 'IMP-') === 0);
                             $disabled_attr = $is_imported ? 'disabled' : '';
                         ?>
                         <div class="modal-header">
@@ -2378,385 +2383,402 @@ if (isset($_GET['edit'])) {
                         <div class="modal-body p-0">
                             <div class="card shadow-none border-0">
         
-        <!-- Profile Header -->
-        <div class="card-body bg-light border-bottom text-center py-4">
-            <div class="position-relative d-inline-block mb-3">
-                <?php if (!empty($edit_employee['photo']) && file_exists(UPLOAD_DIR . $edit_employee['photo'])): ?>
-                    <img src="<?php echo UPLOAD_DIR . $edit_employee['photo']; ?>" class="rounded-circle shadow-sm border border-3 border-white" style="width: 100px; height: 100px; object-fit: cover;">
-                <?php else: ?>
-                    <div class="rounded-circle shadow-sm border border-3 border-white bg-white d-flex align-items-center justify-content-center mx-auto" style="width: 100px; height: 100px;">
-                        <i class="fas fa-user fa-3x text-secondary"></i>
-                    </div>
-                <?php endif; ?>
-                <span class="position-absolute bottom-0 end-0 badge rounded-pill bg-<?php echo $edit_employee['status'] === 'Active' ? 'success' : 'secondary'; ?> border border-white">
-                    <?php echo $edit_employee['status']; ?>
-                </span>
-            </div>
-            <h5 class="mb-1 fw-bold"><?php echo htmlspecialchars($edit_employee['name']); ?></h5>
-            <p class="text-muted mb-0 small"><?php echo htmlspecialchars($edit_employee['job_title']); ?> | <?php echo htmlspecialchars($edit_employee['department']); ?></p>
-            <p class="text-muted small mb-0 font-monospace"><?php echo htmlspecialchars($edit_employee['employee_id'] ?? 'EMP' . str_pad($edit_employee['id'], 4, '0', STR_PAD_LEFT)); ?></p>
-        </div>
-
-        <!-- Navigation Tabs -->
-        <div class="card-header bg-white p-0 border-bottom-0">
-            <ul class="nav nav-tabs nav-fill card-header-tabs m-0" id="editTabs" role="tablist">
-                <li class="nav-item"><button class="nav-link active border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_personal" data-bs-toggle="tab"><i class="fas fa-id-card me-2"></i>Personal</button></li>
-                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_employment" data-bs-toggle="tab"><i class="fas fa-briefcase me-2"></i>Employ.</button></li>
-                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_compensation" data-bs-toggle="tab"><i class="fas fa-money-bill-wave me-2"></i>Compens.</button></li>
-                <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_docs" data-bs-toggle="tab"><i class="fas fa-folder-open me-2"></i>201 Files</button></li>
-            </ul>
-        </div>
-
-        <div class="card-body p-0">
-            <div class="tab-content">
-                <!-- PERSONAL TAB -->
-                <div class="tab-pane fade show active" id="tab_personal">
-                    <div class="p-4">
-                        <?php if ($is_imported): ?>
-                            <div class="alert alert-warning mb-4">
-                                <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
-                            </div>
-                        <?php endif; ?>
-                        <form method="POST" enctype="multipart/form-data" id="profileForm">
-                            <input type="hidden" name="action" value="update_profile">
-                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                            
-                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Basic Information</h6>
-                            <div class="row g-3 mb-4">
-                                <div class="col-md-12">
-                                    <label class="form-label small">Full Name</label>
-                                    <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Date of Birth</label>
-                                    <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Gender</label>
-                                    <select name="gender" class="form-select" <?php echo $disabled_attr; ?>>
-                                        <option value="Male" <?php echo ($edit_employee['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
-                                        <option value="Female" <?php echo ($edit_employee['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Civil Status</label>
-                                    <select name="civil_status" class="form-select" <?php echo $disabled_attr; ?>>
-                                        <option value="Single" <?php echo ($edit_employee['civil_status'] ?? '') === 'Single' ? 'selected' : ''; ?>>Single</option>
-                                        <option value="Married" <?php echo ($edit_employee['civil_status'] ?? '') === 'Married' ? 'selected' : ''; ?>>Married</option>
-                                        <option value="Widowed" <?php echo ($edit_employee['civil_status'] ?? '') === 'Widowed' ? 'selected' : ''; ?>>Widowed</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Nationality</label>
-                                    <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label small">Photo</label>
-                                    <input type="file" name="photo" class="form-control" accept="image/*" <?php echo $disabled_attr; ?>>
-                                </div>
-                            </div>
-                            
-                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Contact Details</h6>
-                            <div class="row g-3 mb-4">
-                                <div class="col-md-6">
-                                    <label class="form-label small">Email</label>
-                                    <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Phone</label>
-                                    <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label small">Address</label>
-                                    <textarea name="address" class="form-control" rows="2" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
-                                </div>
-                            </div>
-                            
-                            <?php if (!$is_imported): ?>
-                            <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
-                            <?php endif; ?>
-                        </form>
-                        
-                        <hr class="my-4">
-                        
-                        <!-- Dependents Section -->
-                        <h6 class="text-uppercase text-secondary small fw-bold mb-3 d-flex justify-content-between align-items-center">
-                            Dependents
-                        </h6>
-                        <div class="list-group mb-3">
-                            <?php foreach ($dependents as $dep): ?>
-                                <div class="list-group-item d-flex justify-content-between align-items-center p-3">
-                                    <div>
-                                        <strong><?php echo htmlspecialchars($dep['name']); ?></strong>
-                                        <small class="text-muted d-block"><?php echo htmlspecialchars($dep['relationship']); ?> | <?php echo htmlspecialchars($dep['birth_date']); ?></small>
+                                <!-- Profile Header -->
+                                <div class="card-body bg-light border-bottom text-center py-4">
+                                    <div class="position-relative d-inline-block mb-3">
+                                        <?php if (!empty($edit_employee['photo']) && file_exists(UPLOAD_DIR . $edit_employee['photo'])): ?>
+                                            <img src="<?php echo UPLOAD_DIR . $edit_employee['photo']; ?>" class="rounded-circle shadow-sm border border-3 border-white" style="width: 100px; height: 100px; object-fit: cover;">
+                                        <?php else: ?>
+                                            <div class="rounded-circle shadow-sm border border-3 border-white bg-white d-flex align-items-center justify-content-center mx-auto" style="width: 100px; height: 100px;">
+                                                <i class="fas fa-user fa-3x text-secondary"></i>
+                                            </div>
+                                        <?php endif; ?>
+                                        <span class="position-absolute bottom-0 end-0 badge rounded-pill bg-<?php echo ($edit_employee['status'] ?? 'Active') === 'Active' ? 'success' : 'secondary'; ?> border border-white">
+                                            <?php echo $edit_employee['status'] ?? 'Active'; ?>
+                                        </span>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-danger delete-dependent" data-dependent-id="<?php echo $dep['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                    <h5 class="mb-1 fw-bold"><?php echo htmlspecialchars($edit_employee['name']); ?></h5>
+                                    <p class="text-muted mb-0 small"><?php echo htmlspecialchars($edit_employee['job_title'] ?? ''); ?> | <?php echo htmlspecialchars($edit_employee['department'] ?? ''); ?></p>
+                                    <p class="text-muted small mb-0 font-monospace"><?php echo htmlspecialchars($edit_employee['employee_id'] ?? 'EMP' . str_pad($edit_employee['id'], 4, '0', STR_PAD_LEFT)); ?></p>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <form method="POST" id="dependentForm" class="card bg-light border-0 p-3">
-                            <input type="hidden" name="action" value="save_dependent">
-                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                            <div class="row g-2">
-                                <div class="col-6"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name" required></div>
-                                <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
-                                <div class="col-6"><input type="date" name="birth_date" class="form-control form-control-sm"></div>
-                                <div class="col-6"><input type="text" name="contact_number" class="form-control form-control-sm" placeholder="Contact #"></div>
-                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Dependent</button></div>
-                            </div>
-                        </form>
-                        
-                         <hr class="my-4">
 
-                        <!-- Emergency Contacts -->
-                         <h6 class="text-uppercase text-secondary small fw-bold mb-3">Emergency Contacts</h6>
-                        <div class="list-group mb-3">
-                            <?php foreach ($emergency_contacts as $contact): ?>
-                                <div class="list-group-item d-flex justify-content-between align-items-center p-3">
-                                    <div>
-                                        <strong><?php echo htmlspecialchars($contact['contact_name']); ?></strong>
-                                        <span class="badge bg-light text-dark border ms-1"><?php echo htmlspecialchars($contact['relationship']); ?></span>
-                                        <small class="text-muted d-block"><?php echo htmlspecialchars($contact['phone']); ?></small>
-                                    </div>
-                                    <button class="btn btn-sm btn-outline-danger delete-contact" data-contact-id="<?php echo $contact['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                <!-- Navigation Tabs -->
+                                <div class="card-header bg-white p-0 border-bottom-0">
+                                    <ul class="nav nav-tabs nav-fill card-header-tabs m-0" id="editTabs" role="tablist">
+                                        <li class="nav-item"><button class="nav-link active border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_personal" data-bs-toggle="tab"><i class="fas fa-id-card me-2"></i>Personal</button></li>
+                                        <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_employment" data-bs-toggle="tab"><i class="fas fa-briefcase me-2"></i>Employ.</button></li>
+                                        <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_compensation" data-bs-toggle="tab"><i class="fas fa-money-bill-wave me-2"></i>Compens.</button></li>
+                                        <li class="nav-item"><button class="nav-link border-0 border-bottom rounded-0 py-3" data-bs-target="#tab_docs" data-bs-toggle="tab"><i class="fas fa-folder-open me-2"></i>201 Files</button></li>
+                                    </ul>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <form method="POST" id="contactForm" class="card bg-light border-0 p-3">
-                             <input type="hidden" name="action" value="save_contact">
-                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                             <div class="row g-2">
-                                <div class="col-6"><input type="text" name="contact_name" class="form-control form-control-sm" placeholder="Name" required></div>
-                                <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
-                                <div class="col-12"><input type="text" name="phone" class="form-control form-control-sm" placeholder="Phone" required></div>
-                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Emergency Contact</button></div>
-                             </div>
-                        </form>
-                    </div>
-                </div>
 
-                <!-- EMPLOYMENT TAB -->
-                <div class="tab-pane fade" id="tab_employment">
-                    <div class="p-4">
-                        <?php if ($is_imported): ?>
-                            <div class="alert alert-warning mb-4">
-                                <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
-                            </div>
-                        <?php endif; ?>
-                        <form method="POST" id="employmentForm" enctype="multipart/form-data">
-                             <input type="hidden" name="action" value="update_profile">
-                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                             
-                             <h6 class="text-uppercase text-secondary small fw-bold mb-3">Employment Details</h6>
-                             <div class="row g-3 mb-4">
-                                <div class="col-md-6">
-                                    <label class="form-label small">Date Hired</label>
-                                    <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Date Regularized</label>
-                                    <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Status</label>
-                                    <select name="status" class="form-select" <?php echo $disabled_attr; ?>>
-                                        <option value="Active" <?php echo $edit_employee['status'] === 'Active' ? 'selected' : ''; ?>>Active</option>
-                                        <option value="Inactive" <?php echo $edit_employee['status'] === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Contract Type</label>
-                                    <select name="contract" class="form-select" <?php echo $disabled_attr; ?>>
-                                        <option value="Regular" <?php echo ($edit_employee['contract'] ?? '') === 'Regular' ? 'selected' : ''; ?>>Regular</option>
-                                        <option value="Probationary" <?php echo ($edit_employee['contract'] ?? '') === 'Probationary' ? 'selected' : ''; ?>>Probationary</option>
-                                        <option value="Contract" <?php echo ($edit_employee['contract'] ?? '') === 'Contract' ? 'selected' : ''; ?>>Contract</option>
-                                        <option value="Project-Based" <?php echo ($edit_employee['contract'] ?? '') === 'Project-Based' ? 'selected' : ''; ?>>Project-Based</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Department</label>
-                                    <input type="text" name="department" class="form-control" value="<?php echo htmlspecialchars($edit_employee['department']); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Position</label>
-                                    <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title']); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Manager/Supervisor</label>
-                                    <input type="text" name="manager" class="form-control" value="<?php echo htmlspecialchars($edit_employee['manager'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Work Schedule</label>
-                                    <input type="text" name="work_schedule" class="form-control" value="<?php echo htmlspecialchars($edit_employee['work_schedule'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
-                                </div>
-                                <div class="col-12">
-                                    <label class="form-label small">Job Description</label>
-                                    <textarea name="job_description" class="form-control" rows="3" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['job_description'] ?? ''); ?></textarea>
-                                </div>
-                             </div>
-                             
-                             <h6 class="text-uppercase text-secondary small fw-bold mb-3">Files</h6>
-                             <div class="mb-3">
-                                 <label class="form-label small">Resume</label>
-                                 <input type="file" name="resume_file" class="form-control form-control-sm" <?php echo $disabled_attr; ?>>
-                                 <?php if (!empty($edit_employee['resume_file'])): ?>
-                                     <small><a href="<?php echo UPLOAD_DIR . $edit_employee['resume_file']; ?>" target="_blank">View Current</a></small>
-                                 <?php endif; ?>
-                             </div>
-                             
-                             <?php if (!$is_imported): ?>
-                             <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
-                             <?php endif; ?>
-                        </form>
-                        
-                        <hr class="my-4">
-                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">Work History</h6>
-                        <div class="list-group mb-3">
-                            <?php foreach ($work_experience as $work): ?>
-                                <div class="list-group-item p-3">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div>
-                                            <h6 class="mb-1"><?php echo htmlspecialchars($work['position']); ?></h6>
-                                            <small class="text-muted d-block"><?php echo htmlspecialchars($work['company_name']); ?></small>
-                                            <small class="text-muted"><?php echo htmlspecialchars($work['date_from']); ?> - <?php echo $work['is_current'] ? 'Present' : htmlspecialchars($work['date_to']); ?></small>
-                                        </div>
-                                        <button class="btn btn-sm btn-outline-danger delete-work" data-work-id="<?php echo $work['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                        <form method="POST" id="workForm" class="card bg-light border-0 p-3">
-                             <input type="hidden" name="action" value="save_work_experience">
-                             <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                             <div class="row g-2">
-                                <div class="col-6"><input type="text" name="company_name" class="form-control form-control-sm" placeholder="Company" required></div>
-                                <div class="col-6"><input type="text" name="position" class="form-control form-control-sm" placeholder="Position" required></div>
-                                <div class="col-6"><input type="date" name="date_from" class="form-control form-control-sm" required></div>
-                                <div class="col-6"><input type="date" name="date_to" class="form-control form-control-sm"></div>
-                                <div class="col-12"><div class="form-check"><input type="checkbox" name="is_current" value="1" class="form-check-input" id="is_current"><label class="form-check-label small" for="is_current">Current Job</label></div></div>
-                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add History</button></div>
-                             </div>
-                        </form>
-                    </div>
-                </div>
-                
-                <!-- COMPENSATION TAB -->
-                <div class="tab-pane fade" id="tab_compensation">
-                    <div class="p-4">
-                        <form method="POST" id="compForm">
-                            <input type="hidden" name="action" value="update_profile">
-                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                            
-                            <div class="alert alert-info py-2 small mb-3">
-                                <i class="fas fa-info-circle me-1"></i> Compensation details are managed in the Compensation Module or provided via verified 201 file documents.
-                            </div>
+                                <div class="card-body p-0">
+                                    <div class="tab-content">
+                                        <!-- PERSONAL TAB -->
+                                        <div class="tab-pane fade show active" id="tab_personal">
+                                            <div class="p-4">
+                                                <?php if ($is_imported): ?>
+                                                    <div class="alert alert-warning mb-4">
+                                                        <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
+                                                    </div>
+                                                <?php endif; ?>
+                                                <form method="POST" enctype="multipart/form-data" id="profileForm">
+                                                    <input type="hidden" name="action" value="update_profile">
+                                                    <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                    
+                                                    <h6 class="text-uppercase text-secondary small fw-bold mb-3">Basic Information</h6>
+                                                    <div class="row g-3 mb-4">
+                                                        <div class="col-md-12">
+                                                            <label class="form-label small">Full Name</label>
+                                                            <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($edit_employee['name']); ?>" required <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Date of Birth</label>
+                                                            <input type="date" name="birth_date" class="form-control" value="<?php echo htmlspecialchars($edit_employee['birth_date'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Gender</label>
+                                                            <select name="gender" class="form-select" <?php echo $disabled_attr; ?>>
+                                                                <option value="Male" <?php echo ($edit_employee['gender'] ?? '') === 'Male' ? 'selected' : ''; ?>>Male</option>
+                                                                <option value="Female" <?php echo ($edit_employee['gender'] ?? '') === 'Female' ? 'selected' : ''; ?>>Female</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Civil Status</label>
+                                                            <select name="civil_status" class="form-select" <?php echo $disabled_attr; ?>>
+                                                                <option value="Single" <?php echo ($edit_employee['civil_status'] ?? '') === 'Single' ? 'selected' : ''; ?>>Single</option>
+                                                                <option value="Married" <?php echo ($edit_employee['civil_status'] ?? '') === 'Married' ? 'selected' : ''; ?>>Married</option>
+                                                                <option value="Widowed" <?php echo ($edit_employee['civil_status'] ?? '') === 'Widowed' ? 'selected' : ''; ?>>Widowed</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Nationality</label>
+                                                            <input type="text" name="nationality" class="form-control" value="<?php echo htmlspecialchars($edit_employee['nationality'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label class="form-label small">Photo</label>
+                                                            <input type="file" name="photo" class="form-control" accept="image/*" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <h6 class="text-uppercase text-secondary small fw-bold mb-3">Contact Details</h6>
+                                                    <div class="row g-3 mb-4">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Email</label>
+                                                            <input type="email" name="email" class="form-control" value="<?php echo htmlspecialchars($edit_employee['email'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Phone</label>
+                                                            <input type="text" name="phone" class="form-control" value="<?php echo htmlspecialchars($edit_employee['phone'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label class="form-label small">Address</label>
+                                                            <textarea name="address" class="form-control" rows="2" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['address'] ?? ''); ?></textarea>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <?php if (!$is_imported): ?>
+                                                    <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                                                    <?php endif; ?>
+                                                </form>
+                                                
+                                                <hr class="my-4">
+                                                
+                                                <!-- Dependents Section -->
+                                                <h6 class="text-uppercase text-secondary small fw-bold mb-3 d-flex justify-content-between align-items-center">
+                                                    Dependents
+                                                </h6>
+                                                <div class="list-group mb-3">
+                                                    <?php if (empty($dependents)): ?>
+                                                        <div class="list-group-item text-muted">No dependents added yet.</div>
+                                                    <?php else: ?>
+                                                        <?php foreach ($dependents as $dep): ?>
+                                                            <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                                                                <div>
+                                                                    <strong><?php echo htmlspecialchars($dep['name']); ?></strong>
+                                                                    <small class="text-muted d-block"><?php echo htmlspecialchars($dep['relationship']); ?> | <?php echo htmlspecialchars($dep['birth_date'] ?? ''); ?></small>
+                                                                </div>
+                                                                <button class="btn btn-sm btn-outline-danger delete-dependent" data-dependent-id="<?php echo $dep['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <form method="POST" id="dependentForm" class="card bg-light border-0 p-3">
+                                                    <input type="hidden" name="action" value="save_dependent">
+                                                    <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                    <div class="row g-2">
+                                                        <div class="col-6"><input type="text" name="name" class="form-control form-control-sm" placeholder="Name" required></div>
+                                                        <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
+                                                        <div class="col-6"><input type="date" name="birth_date" class="form-control form-control-sm"></div>
+                                                        <div class="col-6"><input type="text" name="contact_number" class="form-control form-control-sm" placeholder="Contact #"></div>
+                                                        <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Dependent</button></div>
+                                                    </div>
+                                                </form>
+                                                
+                                                <hr class="my-4">
 
-                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">Comp & Ben</h6>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label small">Basic Salary</label>
-                                    <input type="text" name="salary" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['salary']); ?>" readonly>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Pay Grade</label>
-                                    <input type="text" name="pay_grade" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['pay_grade'] ?? ''); ?>" readonly>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Bank Name</label>
-                                    <input type="text" name="bank_name" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_name'] ?? ''); ?>" readonly>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label small">Account No.</label>
-                                    <input type="text" name="bank_account_no" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_account_no'] ?? ''); ?>" readonly>
-                                </div>
-                            </div>
-                            
-                            <h6 class="text-uppercase text-secondary small fw-bold mt-4 mb-3">Government IDs</h6>
-                            <div class="row g-3 mb-4">
-                                <div class="col-md-6"><label class="form-label small">SSS</label><input type="text" name="sss_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['sss_no'] ?? ''); ?>" readonly></div>
-                                <div class="col-md-6"><label class="form-label small">PhilHealth</label><input type="text" name="philhealth_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['philhealth_no'] ?? ''); ?>" readonly></div>
-                                <div class="col-md-6"><label class="form-label small">Pag-IBIG</label><input type="text" name="pagibig_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['pagibig_no'] ?? ''); ?>" readonly></div>
-                                <div class="col-md-6"><label class="form-label small">TIN</label><input type="text" name="tin_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['tin_no'] ?? ''); ?>" readonly></div>
-                            </div>
-                            
-                            <h6 class="text-uppercase text-secondary small fw-bold mb-3">HMO / Benefits</h6>
-                            <div class="row g-3 mb-4">
-                                <div class="col-md-6"><label class="form-label small">HMO Provider</label><input type="text" name="hmo_provider" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_provider'] ?? ''); ?>" readonly></div>
-                                <div class="col-md-6"><label class="form-label small">HMO Number</label><input type="text" name="hmo_number" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_number'] ?? ''); ?>" readonly></div>
-                            </div>
-                        </form>
-                        
-                        <hr class="my-4">
-                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">Salary History</h6>
-                        <div class="list-group mb-3">
-                             <?php foreach ($salary_history as $hist): ?>
-                                <div class="list-group-item d-flex justify-content-between align-items-center p-2">
-                                    <div>
-                                        <strong><?php echo number_format($hist['amount'], 2); ?></strong>
-                                        <small class="text-muted d-block"><?php echo htmlspecialchars($hist['type']); ?> | <?php echo htmlspecialchars($hist['effective_date']); ?></small>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-
-
-                <!-- 201 FILES TAB -->
-                <div class="tab-pane fade" id="tab_docs">
-                    <div class="p-4">
-                        <h6 class="text-uppercase text-secondary small fw-bold mb-3">201 Files & Certificates</h6>
-                        <div class="list-group mb-3">
-                            <?php foreach ($documents as $doc): ?>
-                                <div class="list-group-item p-3">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div class="d-flex align-items-center">
-                                            <div class="me-3 text-secondary"><i class="fas fa-file-alt fa-2x"></i></div>
-                                            <div>
-                                                <h6 class="mb-0"><?php echo htmlspecialchars($doc['document_name']); ?></h6>
-                                                <small class="text-muted"><?php echo htmlspecialchars($doc['document_type']); ?> | <?php echo date('M d, Y', strtotime($doc['upload_date'])); ?></small>
+                                                <!-- Emergency Contacts -->
+                                                <h6 class="text-uppercase text-secondary small fw-bold mb-3">Emergency Contacts</h6>
+                                                <div class="list-group mb-3">
+                                                    <?php if (empty($emergency_contacts)): ?>
+                                                        <div class="list-group-item text-muted">No emergency contacts added yet.</div>
+                                                    <?php else: ?>
+                                                        <?php foreach ($emergency_contacts as $contact): ?>
+                                                            <div class="list-group-item d-flex justify-content-between align-items-center p-3">
+                                                                <div>
+                                                                    <strong><?php echo htmlspecialchars($contact['contact_name']); ?></strong>
+                                                                    <span class="badge bg-light text-dark border ms-1"><?php echo htmlspecialchars($contact['relationship']); ?></span>
+                                                                    <small class="text-muted d-block"><?php echo htmlspecialchars($contact['phone']); ?></small>
+                                                                </div>
+                                                                <button class="btn btn-sm btn-outline-danger delete-contact" data-contact-id="<?php echo $contact['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <form method="POST" id="contactForm" class="card bg-light border-0 p-3">
+                                                     <input type="hidden" name="action" value="save_contact">
+                                                     <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                     <div class="row g-2">
+                                                        <div class="col-6"><input type="text" name="contact_name" class="form-control form-control-sm" placeholder="Name" required></div>
+                                                        <div class="col-6"><input type="text" name="relationship" class="form-control form-control-sm" placeholder="Relationship" required></div>
+                                                        <div class="col-12"><input type="text" name="phone" class="form-control form-control-sm" placeholder="Phone" required></div>
+                                                        <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add Emergency Contact</button></div>
+                                                     </div>
+                                                </form>
                                             </div>
                                         </div>
-                                        <div class="btn-group">
-                                            <a href="<?php echo UPLOAD_DIR . $doc['file_path']; ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
-                                            <button class="btn btn-sm btn-outline-danger delete-document" data-document-id="<?php echo $doc['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+
+                                        <!-- EMPLOYMENT TAB -->
+                                        <div class="tab-pane fade" id="tab_employment">
+                                            <div class="p-4">
+                                                <?php if ($is_imported): ?>
+                                                    <div class="alert alert-warning mb-4">
+                                                        <i class="fas fa-lock me-2"></i>This is an imported record. Personal and employment details cannot be edited.
+                                                    </div>
+                                                <?php endif; ?>
+                                                <form method="POST" id="employmentForm" enctype="multipart/form-data">
+                                                     <input type="hidden" name="action" value="update_profile">
+                                                     <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                     
+                                                     <h6 class="text-uppercase text-secondary small fw-bold mb-3">Employment Details</h6>
+                                                     <div class="row g-3 mb-4">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Date Hired</label>
+                                                            <input type="date" name="date_hired" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_hired'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Date Regularized</label>
+                                                            <input type="date" name="date_regularized" class="form-control" value="<?php echo htmlspecialchars($edit_employee['date_regularized'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Status</label>
+                                                            <select name="status" class="form-select" <?php echo $disabled_attr; ?>>
+                                                                <option value="Active" <?php echo ($edit_employee['status'] ?? '') === 'Active' ? 'selected' : ''; ?>>Active</option>
+                                                                <option value="Inactive" <?php echo ($edit_employee['status'] ?? '') === 'Inactive' ? 'selected' : ''; ?>>Inactive</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Contract Type</label>
+                                                            <select name="contract" class="form-select" <?php echo $disabled_attr; ?>>
+                                                                <option value="Regular" <?php echo ($edit_employee['contract'] ?? '') === 'Regular' ? 'selected' : ''; ?>>Regular</option>
+                                                                <option value="Probationary" <?php echo ($edit_employee['contract'] ?? '') === 'Probationary' ? 'selected' : ''; ?>>Probationary</option>
+                                                                <option value="Contract" <?php echo ($edit_employee['contract'] ?? '') === 'Contract' ? 'selected' : ''; ?>>Contract</option>
+                                                                <option value="Project-Based" <?php echo ($edit_employee['contract'] ?? '') === 'Project-Based' ? 'selected' : ''; ?>>Project-Based</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Department</label>
+                                                            <input type="text" name="department" class="form-control" value="<?php echo htmlspecialchars($edit_employee['department'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Position</label>
+                                                            <input type="text" name="job_title" class="form-control" value="<?php echo htmlspecialchars($edit_employee['job_title'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Manager/Supervisor</label>
+                                                            <input type="text" name="manager" class="form-control" value="<?php echo htmlspecialchars($edit_employee['manager'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Work Schedule</label>
+                                                            <input type="text" name="work_schedule" class="form-control" value="<?php echo htmlspecialchars($edit_employee['work_schedule'] ?? ''); ?>" <?php echo $disabled_attr; ?>>
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label class="form-label small">Job Description</label>
+                                                            <textarea name="job_description" class="form-control" rows="3" <?php echo $disabled_attr; ?>><?php echo htmlspecialchars($edit_employee['job_description'] ?? ''); ?></textarea>
+                                                        </div>
+                                                     </div>
+                                                     
+                                                     <h6 class="text-uppercase text-secondary small fw-bold mb-3">Files</h6>
+                                                     <div class="mb-3">
+                                                         <label class="form-label small">Resume</label>
+                                                         <input type="file" name="resume_file" class="form-control form-control-sm" <?php echo $disabled_attr; ?>>
+                                                         <?php if (!empty($edit_employee['resume_file'])): ?>
+                                                             <small><a href="<?php echo UPLOAD_DIR . $edit_employee['resume_file']; ?>" target="_blank">View Current</a></small>
+                                                         <?php endif; ?>
+                                                     </div>
+                                                     
+                                                     <?php if (!$is_imported): ?>
+                                                     <button type="submit" class="btn btn-primary w-100"><i class="fas fa-save me-1"></i> Save Changes</button>
+                                                     <?php endif; ?>
+                                                </form>
+                                                
+                                                <hr class="my-4">
+                                                <h6 class="text-uppercase text-secondary small fw-bold mb-3">Work History</h6>
+                                                <div class="list-group mb-3">
+                                                    <?php if (empty($work_experience)): ?>
+                                                        <div class="list-group-item text-muted">No work history added yet.</div>
+                                                    <?php else: ?>
+                                                        <?php foreach ($work_experience as $work): ?>
+                                                            <div class="list-group-item p-3">
+                                                                <div class="d-flex justify-content-between align-items-start">
+                                                                    <div>
+                                                                        <h6 class="mb-1"><?php echo htmlspecialchars($work['position']); ?></h6>
+                                                                        <small class="text-muted d-block"><?php echo htmlspecialchars($work['company_name']); ?></small>
+                                                                        <small class="text-muted"><?php echo htmlspecialchars($work['date_from']); ?> - <?php echo !empty($work['is_current']) ? 'Present' : htmlspecialchars($work['date_to'] ?? ''); ?></small>
+                                                                    </div>
+                                                                    <button class="btn btn-sm btn-outline-danger delete-work" data-work-id="<?php echo $work['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                                                </div>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <form method="POST" id="workForm" class="card bg-light border-0 p-3">
+                                                     <input type="hidden" name="action" value="save_work_experience">
+                                                     <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                     <div class="row g-2">
+                                                        <div class="col-6"><input type="text" name="company_name" class="form-control form-control-sm" placeholder="Company" required></div>
+                                                        <div class="col-6"><input type="text" name="position" class="form-control form-control-sm" placeholder="Position" required></div>
+                                                        <div class="col-6"><input type="date" name="date_from" class="form-control form-control-sm" required></div>
+                                                        <div class="col-6"><input type="date" name="date_to" class="form-control form-control-sm"></div>
+                                                        <div class="col-12"><div class="form-check"><input type="checkbox" name="is_current" value="1" class="form-check-input" id="is_current"><label class="form-check-label small" for="is_current">Current Job</label></div></div>
+                                                        <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Add History</button></div>
+                                                     </div>
+                                                </form>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- COMPENSATION TAB -->
+                                        <div class="tab-pane fade" id="tab_compensation">
+                                            <div class="p-4">
+                                                <form method="POST" id="compForm">
+                                                    <input type="hidden" name="action" value="update_profile">
+                                                    <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                    
+                                                    <div class="alert alert-info py-2 small mb-3">
+                                                        <i class="fas fa-info-circle me-1"></i> Compensation details are managed in the Compensation Module or provided via verified 201 file documents.
+                                                    </div>
+
+                                                    <h6 class="text-uppercase text-secondary small fw-bold mb-3">Comp & Ben</h6>
+                                                    <div class="row g-3">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Basic Salary</label>
+                                                            <input type="text" name="salary" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['salary'] ?? ''); ?>" readonly>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Pay Grade</label>
+                                                            <input type="text" name="pay_grade" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['pay_grade'] ?? ''); ?>" readonly>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Bank Name</label>
+                                                            <input type="text" name="bank_name" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_name'] ?? ''); ?>" readonly>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <label class="form-label small">Account No.</label>
+                                                            <input type="text" name="bank_account_no" class="form-control bg-light" value="<?php echo htmlspecialchars($edit_employee['bank_account_no'] ?? ''); ?>" readonly>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <h6 class="text-uppercase text-secondary small fw-bold mt-4 mb-3">Government IDs</h6>
+                                                    <div class="row g-3 mb-4">
+                                                        <div class="col-md-6"><label class="form-label small">SSS</label><input type="text" name="sss_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['sss_no'] ?? ''); ?>" readonly></div>
+                                                        <div class="col-md-6"><label class="form-label small">PhilHealth</label><input type="text" name="philhealth_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['philhealth_no'] ?? ''); ?>" readonly></div>
+                                                        <div class="col-md-6"><label class="form-label small">Pag-IBIG</label><input type="text" name="pagibig_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['pagibig_no'] ?? ''); ?>" readonly></div>
+                                                        <div class="col-md-6"><label class="form-label small">TIN</label><input type="text" name="tin_no" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['tin_no'] ?? ''); ?>" readonly></div>
+                                                    </div>
+                                                    
+                                                    <h6 class="text-uppercase text-secondary small fw-bold mb-3">HMO / Benefits</h6>
+                                                    <div class="row g-3 mb-4">
+                                                        <div class="col-md-6"><label class="form-label small">HMO Provider</label><input type="text" name="hmo_provider" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_provider'] ?? ''); ?>" readonly></div>
+                                                        <div class="col-md-6"><label class="form-label small">HMO Number</label><input type="text" name="hmo_number" class="form-control form-control-sm bg-light" value="<?php echo htmlspecialchars($edit_employee['hmo_number'] ?? ''); ?>" readonly></div>
+                                                    </div>
+                                                </form>
+                                                
+                                                <hr class="my-4">
+                                                <h6 class="text-uppercase text-secondary small fw-bold mb-3">Salary History</h6>
+                                                <div class="list-group mb-3">
+                                                    <?php if (empty($salary_history)): ?>
+                                                        <div class="list-group-item text-muted">No salary history added yet.</div>
+                                                    <?php else: ?>
+                                                        <?php foreach ($salary_history as $hist): ?>
+                                                            <div class="list-group-item d-flex justify-content-between align-items-center p-2">
+                                                                <div>
+                                                                    <strong><?php echo number_format($hist['amount'], 2); ?></strong>
+                                                                    <small class="text-muted d-block"><?php echo htmlspecialchars($hist['type']); ?> | <?php echo htmlspecialchars($hist['effective_date']); ?></small>
+                                                                </div>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 201 FILES TAB -->
+                                        <div class="tab-pane fade" id="tab_docs">
+                                            <div class="p-4">
+                                                <h6 class="text-uppercase text-secondary small fw-bold mb-3">201 Files & Certificates</h6>
+                                                <div class="list-group mb-3">
+                                                    <?php if (empty($documents)): ?>
+                                                        <div class="list-group-item text-muted">No documents uploaded yet.</div>
+                                                    <?php else: ?>
+                                                        <?php foreach ($documents as $doc): ?>
+                                                            <div class="list-group-item p-3">
+                                                                <div class="d-flex justify-content-between align-items-center">
+                                                                    <div class="d-flex align-items-center">
+                                                                        <div class="me-3 text-secondary"><i class="fas fa-file-alt fa-2x"></i></div>
+                                                                        <div>
+                                                                            <h6 class="mb-0"><?php echo htmlspecialchars($doc['document_name']); ?></h6>
+                                                                            <small class="text-muted"><?php echo htmlspecialchars($doc['document_type']); ?> | <?php echo date('M d, Y', strtotime($doc['upload_date'])); ?></small>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="btn-group">
+                                                                        <a href="<?php echo UPLOAD_DIR . $doc['file_path']; ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
+                                                                        <button class="btn btn-sm btn-outline-danger delete-document" data-document-id="<?php echo $doc['id']; ?>" data-employee-id="<?php echo $edit_employee['id']; ?>"><i class="fas fa-trash"></i></button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+
+                                                <form method="POST" enctype="multipart/form-data" id="documentForm" class="card bg-light border-0 p-3">
+                                                    <input type="hidden" name="action" value="save_document">
+                                                    <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
+                                                    <div class="row g-2">
+                                                        <div class="col-12"><input type="text" name="document_name" class="form-control form-control-sm" placeholder="Document Name" required></div>
+                                                        <div class="col-12">
+                                                            <select name="document_type" class="form-select form-select-sm" required>
+                                                                <option value="" selected disabled>Select Type...</option>
+                                                                <option value="Resume/CV">Resume/CV</option>
+                                                                <option value="Application Form">Application Form</option>
+                                                                <option value="Contract">Contract</option>
+                                                                <option value="Job Offer">Job Offer</option>
+                                                                <option value="Certificate">Certificate</option>
+                                                                <option value="Memo">Memo</option>
+                                                                <option value="Evaluation">Evaluation</option>
+                                                                <option value="Medical">Medical Result</option>
+                                                                <option value="Clearance">Clearance</option>
+                                                                <option value="Resignation">Resignation Letter</option>
+                                                                <option value="Other">Other</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="col-12"><input type="file" name="document_file" class="form-control form-control-sm" required></div>
+                                                        <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Upload Document</button></div>
+                                                    </div>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
-                        
-
-
-                        <form method="POST" enctype="multipart/form-data" id="documentForm" class="card bg-light border-0 p-3">
-                            <input type="hidden" name="action" value="save_document">
-                            <input type="hidden" name="employee_id" value="<?php echo $edit_employee['id']; ?>">
-                            <div class="row g-2">
-                                <div class="col-12"><input type="text" name="document_name" class="form-control form-control-sm" placeholder="Document Name" required></div>
-                                <div class="col-12">
-                                    <select name="document_type" class="form-select form-select-sm" required>
-                                        <option value="" selected disabled>Select Type...</option>
-                                        <option value="Resume/CV">Resume/CV</option>
-                                        <option value="Application Form">Application Form</option>
-                                        <option value="Contract">Contract</option>
-                                        <option value="Job Offer">Job Offer</option>
-                                        <option value="Certificate">Certificate</option>
-                                        <option value="Memo">Memo</option>
-                                        <option value="Evaluation">Evaluation</option>
-                                        <option value="Medical">Medical Result</option>
-                                        <option value="Clearance">Clearance</option>
-                                        <option value="Resignation">Resignation Letter</option>
-                                        <option value="Other">Other</option>
-                                    </select>
-                                </div>
-                                <div class="col-12"><input type="file" name="document_file" class="form-control form-control-sm" required></div>
-                                <div class="col-12"><button type="submit" class="btn btn-sm btn-secondary w-100">Upload Document</button></div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
                             </div>
                         </div>
                     </div>
@@ -2897,8 +2919,6 @@ if (isset($_GET['edit'])) {
             }, 5000);
         }
         
-        // ... (Rest of existing scripts) ...
-
         // Fetch HR1 Data Handler
         const fetchBtn = document.getElementById('fetchHr1Btn');
         const importBtn = document.getElementById('importHr1Btn');
@@ -3023,7 +3043,6 @@ if (isset($_GET['edit'])) {
                 });
             });
         }
-
 
         // Photo preview
         function setupPhotoPreview() {
@@ -3254,7 +3273,7 @@ if (isset($_GET['edit'])) {
              otherHtml += '</ul><h6 class="small fw-bold text-secondary mt-3">Seminars & Trainings</h6><ul class="list-group list-group-flush small">';
              if(data.seminars && data.seminars.length > 0) {
                  data.seminars.forEach(s => {
-                     otherHtml += `<li class="list-group-item px-0 py-1"><strong>${s.seminar_name}</strong> <span class="text-muted">(${s.date_attended})</span></li>`;
+                     otherHtml += `<li class="list-group-item px-0 py-1"><strong>${s.seminar_name}</strong> <span class="text-muted">(${s.date_from})</span></li>`;
                  });
              } else { otherHtml += '<li class="list-group-item px-0 py-1 text-muted">No seminars recorded</li>'; }
 
@@ -3310,7 +3329,7 @@ if (isset($_GET['edit'])) {
                             .then(data => {
                                 if (data.success) {
                                     // Remove the card element
-                                    const cardElement = this.closest('.card');
+                                    const cardElement = this.closest('.list-group-item');
                                     if (cardElement) {
                                         cardElement.remove();
                                     }
@@ -3334,16 +3353,18 @@ if (isset($_GET['edit'])) {
         }
 
         // Setup delete handlers for all types
-        setupDeleteHandler('.delete-contact', 'contact');
-        setupDeleteHandler('.delete-education', 'education');
-        setupDeleteHandler('.delete-seminar', 'seminar');
-        setupDeleteHandler('.delete-skill', 'skill');
-        setupDeleteHandler('.delete-work', 'work_experience');
-        setupDeleteHandler('.delete-dependent', 'dependent');
-        setupDeleteHandler('.delete-salary', 'salary');
-        setupDeleteHandler('.delete-performance', 'performance');
-        setupDeleteHandler('.delete-disciplinary', 'disciplinary');
-        setupDeleteHandler('.delete-document', 'document');
+        function setupAllDeleteHandlers() {
+            setupDeleteHandler('.delete-contact', 'contact');
+            setupDeleteHandler('.delete-education', 'education');
+            setupDeleteHandler('.delete-seminar', 'seminar');
+            setupDeleteHandler('.delete-skill', 'skill');
+            setupDeleteHandler('.delete-work', 'work_experience');
+            setupDeleteHandler('.delete-dependent', 'dependent');
+            setupDeleteHandler('.delete-salary', 'salary');
+            setupDeleteHandler('.delete-performance', 'performance');
+            setupDeleteHandler('.delete-disciplinary', 'disciplinary');
+            setupDeleteHandler('.delete-document', 'document');
+        }
 
         // Form submission with AJAX
         function setupFormHandler(formId) {
@@ -3357,9 +3378,11 @@ if (isset($_GET['edit'])) {
 
                 // Show loading state
                 const submitBtn = this.querySelector('button[type="submit"]');
-                const originalText = submitBtn.innerHTML;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-                submitBtn.disabled = true;
+                const originalText = submitBtn ? submitBtn.innerHTML : 'Saving...';
+                if (submitBtn) {
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                    submitBtn.disabled = true;
+                }
 
                 fetch('', {
                         method: 'POST',
@@ -3379,7 +3402,7 @@ if (isset($_GET['edit'])) {
                             // Reload page after success to show updated data
                             setTimeout(() => {
                                 window.location.reload();
-                            }, 1000);
+                            }, 1500);
                         } else {
                             showAlert(data.message, 'danger');
                         }
@@ -3390,26 +3413,13 @@ if (isset($_GET['edit'])) {
                     })
                     .finally(() => {
                         // Restore button state
-                        submitBtn.innerHTML = originalText;
-                        submitBtn.disabled = false;
+                        if (submitBtn) {
+                            submitBtn.innerHTML = originalText;
+                            submitBtn.disabled = false;
+                        }
                     });
             });
         }
-
-        // Setup form handlers for all forms
-        setupFormHandler('profileForm');
-        setupFormHandler('contactForm');
-        setupFormHandler('educationForm');
-        setupFormHandler('seminarForm');
-        setupFormHandler('skillForm');
-        setupFormHandler('workForm');
-        setupFormHandler('documentForm');
-        setupFormHandler('dependentForm');
-        setupFormHandler('employmentForm');
-        setupFormHandler('compForm');
-        setupFormHandler('salaryForm');
-        setupFormHandler('performanceForm');
-        setupFormHandler('disciplinaryForm');
 
         // Handle current job checkbox
         document.getElementById('is_current')?.addEventListener('change', function() {
@@ -3419,23 +3429,6 @@ if (isset($_GET['edit'])) {
                 dateToField.value = '';
             } else {
                 dateToField.disabled = false;
-            }
-        });
-
-        // Clear form when adding new items
-        document.querySelectorAll('form[id$="Form"]').forEach(form => {
-            if (form.id !== 'profileForm' && form.id !== 'employmentForm' && form.id !== 'compForm') {
-                const clearBtn = document.createElement('button');
-                clearBtn.type = 'button';
-                clearBtn.className = 'btn btn-outline-secondary btn-sm mt-2';
-                clearBtn.innerHTML = '<i class="fas fa-times"></i> Clear Form';
-                clearBtn.addEventListener('click', function() {
-                    form.reset();
-                    // Reset hidden ID fields
-                    const idFields = form.querySelectorAll('input[type="hidden"][id$="_id"]');
-                    idFields.forEach(field => field.value = '');
-                });
-                form.appendChild(clearBtn);
             }
         });
 
@@ -3455,17 +3448,39 @@ if (isset($_GET['edit'])) {
 
             setupPhotoPreview();
             setupViewButtons();
+            setupAllDeleteHandlers();
             
-            setupDeleteHandler('.delete-contact', 'contact');
-            setupDeleteHandler('.delete-education', 'education');
-            setupDeleteHandler('.delete-seminar', 'seminar');
-            setupDeleteHandler('.delete-skill', 'skill');
-            setupDeleteHandler('.delete-work', 'work_experience');
-            setupDeleteHandler('.delete-dependent', 'dependent');
-            setupDeleteHandler('.delete-salary', 'salary');
-            setupDeleteHandler('.delete-performance', 'performance');
-            setupDeleteHandler('.delete-disciplinary', 'disciplinary');
-            setupDeleteHandler('.delete-document', 'document');
+            // Setup form handlers for all forms
+            setupFormHandler('profileForm');
+            setupFormHandler('contactForm');
+            setupFormHandler('educationForm');
+            setupFormHandler('seminarForm');
+            setupFormHandler('skillForm');
+            setupFormHandler('workForm');
+            setupFormHandler('documentForm');
+            setupFormHandler('dependentForm');
+            setupFormHandler('employmentForm');
+            setupFormHandler('compForm');
+            setupFormHandler('salaryForm');
+            setupFormHandler('performanceForm');
+            setupFormHandler('disciplinaryForm');
+
+            // Clear form when adding new items
+            document.querySelectorAll('form[id$="Form"]').forEach(form => {
+                if (form.id !== 'profileForm' && form.id !== 'employmentForm' && form.id !== 'compForm') {
+                    const clearBtn = document.createElement('button');
+                    clearBtn.type = 'button';
+                    clearBtn.className = 'btn btn-outline-secondary btn-sm mt-2';
+                    clearBtn.innerHTML = '<i class="fas fa-times"></i> Clear Form';
+                    clearBtn.addEventListener('click', function() {
+                        form.reset();
+                        // Reset hidden ID fields
+                        const idFields = form.querySelectorAll('input[type="hidden"][id$="_id"]');
+                        idFields.forEach(field => field.value = '');
+                    });
+                    form.appendChild(clearBtn);
+                }
+            });
         });
 
         // Gemini Audit Function
@@ -3695,5 +3710,3 @@ if (isset($_GET['edit'])) {
         }
     </script>
 </body>
-
-</html>
